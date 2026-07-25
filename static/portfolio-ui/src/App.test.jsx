@@ -49,16 +49,16 @@ jest.mock('jspdf', () => ({
 function mockBpmnInstanceFactory() {
   return {
     importXML: jest.fn().mockResolvedValue({ warnings: [] }),
-    saveXML: jest.fn().mockResolvedValue({ xml: '<xml>mock-saved</xml>' }),
+    saveXML: jest.fn().mockResolvedValue({ xml: 'mock-saved' }),
     on: jest.fn(),
+    off: jest.fn(), // navigator unsubscribes on unmount
     destroy: jest.fn(),
-    // ✅ Add the 'get' method to prevent "instance.get is not a function" errors
     get: jest.fn().mockImplementation((name) => {
-      if (name === 'eventBus') {
-        return { on: jest.fn(), off: jest.fn() };
-      }
-      // Return undefined for other modules (like 'propertiesPanel')
-      // so the component's fallback logic can handle it gracefully.
+      if (name === 'eventBus') return { on: jest.fn(), off: jest.fn() };
+      if (name === 'elementRegistry') return { getAll: () => [] }; // navigator.collect()
+      if (name === 'propertiesPanel') return { registerProvider: jest.fn() }; // silences JiraPropertiesProvider
+      // commandStack / canvas stay undefined; the component already
+      // null-checks commandStack and wraps canvas.viewbox() in try/catch.
       return undefined;
     }),
   };

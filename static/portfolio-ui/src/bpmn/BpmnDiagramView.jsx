@@ -200,6 +200,13 @@ export default function BpmnDiagramView({
   // always-visible index of every element with a jira:LinkedResources
   // extension, plus a one-click jump to that element.
   const [showNavigator, setShowNavigator] = useState(true);
+  // XML snapshot taken just before we recreate the modeler to add/remove
+  // the token-simulation module. The recreate re-imports the `diagramXml`
+  // prop, which only changes on save / remote reload — so without this,
+  // any unsaved edit (notably a Participant/pool drawn this session) is
+  // discarded on toggle: the "pool disappears when I enable token
+  // simulation" bug.
+  const preserveXmlRef = useRef(null);
 
   useEffect(() => {
     if (!canvasRef.current) return undefined;
@@ -243,7 +250,12 @@ export default function BpmnDiagramView({
     inst.on('canvas.viewbox.changed', syncZoom);
     inst.on('import.done', syncZoom);
 
-    inst.importXML(diagramXml || EMPTY_BPMN_XML)
+    // Prefer a snapshot captured by the token-simulation toggle so unsaved
+    // edits survive the recreate; otherwise import the prop as before.
+    const xmlToImport = preserveXmlRef.current || diagramXml || EMPTY_BPMN_XML;
+    preserveXmlRef.current = null;
+
+    inst.importXML(xmlToImport)
       .then(() => { syncZoom(); syncUndo(); })
       .catch((err) => console.error('Failed to load BPMN diagram', err));
 
@@ -259,6 +271,22 @@ export default function BpmnDiagramView({
     const { xml } = await instanceRef.current.saveXML({ format: true });
     await onSave(xml);
     onDirtyChange?.(false);
+  };
+
+  // Toggling token simulation recreates the modeler (the module can only
+  // be registered at construction). Snapshot the live XML first so the
+  // recreate restores the current diagram — including unsaved edits like a
+  // pool/participant added this session — instead of reverting to the last
+  // saved `diagramXml` prop.
+  const onToggleTokenSim = async (checked) => {
+    const inst = instanceRef.current;
+    if (inst) {
+      try {
+        const { xml } = await inst.saveXML({ format: true });
+        preserveXmlRef.current = xml;
+      } catch (e) { /* fall back to the prop on error */ }
+    }
+    setTokenSimEnabled(checked);
   };
 
   // --- toolbar actions (real bpmn-js APIs) ---
@@ -349,7 +377,7 @@ export default function BpmnDiagramView({
             <div className="bpmn-tb-group">
               <label className="bpmn-toggle" title="Animate tokens through the process">
                 <input type="checkbox" data-testid="toggle-token-simulation"
-                  checked={tokenSimEnabled} onChange={(e) => setTokenSimEnabled(e.target.checked)} />
+                  checked={tokenSimEnabled} onChange={(e) => onToggleTokenSim(e.target.checked)} />
                 Token simulation
               </label>
             </div>
@@ -386,28 +414,30 @@ export default function BpmnDiagramView({
         </div>
       </div>
 
-      {/* Canvas + properties / attribute panel. Order is intentional:
-          navigator on the left, canvas in the middle, properties on the
-          right — matches the viadee "BPMN Modeler for Confluence"
-          layout shown in the design reference. The navigator stays open
-          even when token simulation shifts the bpmn-js Properties panel
-          focus to the Process, so the End Event's linked resources
-          remain one click away. */}
-      <div className="bpmn-canvas-col">
-        {showNavigator && (
-          <LinkedResourcesNavigator
-            instance={instance}
-            onNavigate={(elementId) => {
-              const el = instanceRef.current?.get('elementRegistry').get(elementId);
-              if (el) navigateToElement(el);
-            }}
-          />
-        )}
-        <div ref={canvasRef} data-testid="bpmn-canvas" className="bpmn-canvas" />
-        {canEdit
-          ? <div id="js-properties-panel" data-testid="bpmn-properties-panel" className="bpmn-panel" />
-          : <ViewerPropertiesPanel instance={instance} />}
-      </div>
+      {/* Linked-resources panels on the left, canvas on the right. The
+            navigator (the index of elements that carry a jira:LinkedResources
+            extension) and the Properties panel (which hosts the editable
+            Linked Resources group) are placed side-by-side so the editing
+            surface is always right next to the index — and both stay visible
+            even when token simulation shifts the Properties panel's focus to
+            the Process. The canvas takes the remaining width. (Prefer the
+            canvas on the left? Move the <div ref={canvasRef} …/> block to be
+            the first child of .bpmn-canvas-col.) */}
+        <div className="bpmn-canvas-col">
+          {showNavigator && (
+            <LinkedResourcesNavigator
+              instance={instance}
+              onNavigate={(elementId) => {
+                const el = instanceRef.current?.get('elementRegistry').get(elementId);
+                if (el) navigateToElement(el);
+              }}
+            />
+          )}
+          {canEdit
+            ? <div id="js-properties-panel" data-testid="bpmn-properties-panel" className="bpmn-panel" />
+            : <ViewerPropertiesPanel instance={instance} />}
+          <div ref={canvasRef} data-testid="bpmn-canvas" className="bpmn-canvas" />
+        </div>
     </div>
   );
 }
