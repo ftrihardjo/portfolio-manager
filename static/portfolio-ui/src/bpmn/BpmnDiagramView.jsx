@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import BpmnModeler from 'bpmn-js/lib/Modeler';
 import BpmnViewer from 'bpmn-js/lib/NavigatedViewer';
 import { BpmnPropertiesPanelModule } from 'bpmn-js-properties-panel';
@@ -200,6 +201,11 @@ export default function BpmnDiagramView({
   // always-visible index of every element with a jira:LinkedResources
   // extension, plus a one-click jump to that element.
   const [showNavigator, setShowNavigator] = useState(true);
+  // DOM node in App.jsx's left sidebar (above the "Search diagrams…" input)
+  // that we portal the navigator + read-only properties panel into. Set in
+  // the modeler effect (same tick as setInstance) so the portal appears at
+  // exactly the same moment the inline version used to.
+  const [panelSlot, setPanelSlot] = useState(null);
   // XML snapshot taken just before we recreate the modeler to add/remove
   // the token-simulation module. The recreate re-imports the `diagramXml`
   // prop, which only changes on save / remote reload — so without this,
@@ -223,6 +229,7 @@ export default function BpmnDiagramView({
     });
     instanceRef.current = inst;
     setInstance(inst);
+    setPanelSlot(document.getElementById('bpmn-linked-panels-nav-slot'));
 
     if (canEdit) {
       try {
@@ -263,6 +270,7 @@ export default function BpmnDiagramView({
       inst.destroy();
       instanceRef.current = null;
       setInstance(null);
+      setPanelSlot(null);
     };
   }, [diagramXml, canEdit, tokenSimEnabled]);
 
@@ -423,21 +431,29 @@ export default function BpmnDiagramView({
             the Process. The canvas takes the remaining width. (Prefer the
             canvas on the left? Move the <div ref={canvasRef} …/> block to be
             the first child of .bpmn-canvas-col.) */}
-        <div className="bpmn-canvas-col">
-          {showNavigator && (
-            <LinkedResourcesNavigator
-              instance={instance}
-              onNavigate={(elementId) => {
-                const el = instanceRef.current?.get('elementRegistry').get(elementId);
-                if (el) navigateToElement(el);
-              }}
-            />
-          )}
-          {canEdit
-            ? <div id="js-properties-panel" data-testid="bpmn-properties-panel" className="bpmn-panel" />
-            : <ViewerPropertiesPanel instance={instance} />}
-          <div ref={canvasRef} data-testid="bpmn-canvas" className="bpmn-canvas" />
-        </div>
+      <div className="bpmn-canvas-col">
+        {/* Navigator + (view-mode) properties panel are portaled up into the
+            left sidebar of App.jsx, directly above the "Search diagrams…"
+            input (#bpmn-linked-panels-nav-slot). The edit-mode properties
+            panel mount point (#js-properties-panel) now lives in App.jsx as
+            well, so the modeler finds it at construction time. */}
+        {panelSlot && createPortal(
+          <>
+            {showNavigator && (
+              <LinkedResourcesNavigator
+                instance={instance}
+                onNavigate={(elementId) => {
+                  const el = instanceRef.current?.get('elementRegistry').get(elementId);
+                  if (el) navigateToElement(el);
+                }}
+              />
+            )}
+            {!canEdit && <ViewerPropertiesPanel instance={instance} />}
+          </>,
+          panelSlot,
+        )}
+        <div ref={canvasRef} data-testid="bpmn-canvas" className="bpmn-canvas" />
+      </div>
     </div>
   );
 }

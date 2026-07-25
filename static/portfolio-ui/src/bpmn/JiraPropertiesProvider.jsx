@@ -1,4 +1,12 @@
 import { h } from 'preact';
+// The read-only group below is mounted by the *React* ViewerPropertiesPanel,
+// so its vnodes MUST be React elements. The editable LinkedResourcesGroup
+// above stays on Preact's h() because @bpmn-io/properties-panel renders
+// group components with Preact. Returning a Preact vnode into a React
+// render is exactly what produced "Minified React error #31 … object with
+// keys {type, props, key, ref}" on selection (those keys + __k, __… are a
+// Preact vnode's shape, which React cannot render as a child).
+import { createElement as rce } from 'react';
 import {
   isTextFieldEntryEdited,
   TextAreaEntry,
@@ -115,33 +123,31 @@ function LinkedResourcesGroup({ element }) {
 
 function Field({ label, value, link, multiline }) {
   if (!value) return null;
-  return h('div', { style: { marginBottom: '6px' } },
-    h('div', { style: { fontSize: '11px', color: '#5e6c84', marginBottom: '2px' } }, label),
+  return rce('div', { style: { marginBottom: '6px' } },
+    rce('div', { style: { fontSize: '11px', color: '#5e6c84', marginBottom: '2px' } }, label),
     link
-      ? h('a', { href: value, target: '_blank', rel: 'noopener noreferrer', style: { fontSize: '12px', color: '#0052cc' } }, value)
-      : h('div', { style: { fontSize: '12px', whiteSpace: multiline ? 'pre-wrap' : 'normal' } }, value),
+      ? rce('a', { href: value, target: '_blank', rel: 'noopener noreferrer', style: { fontSize: '12px', color: '#0052cc' } }, value)
+      : rce('div', { style: { fontSize: '12px', whiteSpace: multiline ? 'pre-wrap' : 'normal' } }, value),
   );
 }
 
-// Read-only group (Viewer). No modeling service exists there, so we render
-// the same data statically. Open-buttons still work via the window bridge.
 export function ReadOnlyLinkedResourcesGroup({ element }) {
   const ext = getLinkedResources(getBusinessObject(element)) || {};
   const issueKey = ext.issueKey || '';
   const confluencePage = ext.confluencePage || '';
   const documentation = ext.documentation || '';
-  return h('div', { style: shellStyle },
-    h('h3', { style: headStyle }, 'Linked Resources'),
-    h(Field, { label: 'Issue Key', value: issueKey }),
-    h(Field, { label: 'Confluence URL', value: confluencePage, link: true }),
-    h(Field, { label: 'Documentation', value: documentation, multiline: true }),
-    h('div', { style: { display: 'flex', gap: '6px', marginTop: '8px' } },
-      h('button', {
+  return rce('div', { style: shellStyle },
+    rce('h3', { style: headStyle }, 'Linked Resources'),
+    rce(Field, { label: 'Issue Key', value: issueKey }),
+    rce(Field, { label: 'Confluence URL', value: confluencePage, link: true }),
+    rce(Field, { label: 'Documentation', value: documentation, multiline: true }),
+    rce('div', { style: { display: 'flex', gap: '6px', marginTop: '8px' } },
+      rce('button', {
         type: 'button',
         onClick: () => { if (ISSUE_KEY_PATTERN.test(issueKey)) window.__openIssueInJira?.(issueKey); },
         disabled: !ISSUE_KEY_PATTERN.test(issueKey), style: btnStyle,
       }, 'Open in Jira'),
-      h('button', {
+      rce('button', {
         type: 'button',
         onClick: () => { if (confluencePage) window.__routerOpen?.(confluencePage); },
         disabled: !confluencePage, style: btnStyle,
