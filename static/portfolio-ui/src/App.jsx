@@ -1798,18 +1798,12 @@ export default function App() {
             ) : (
               <div style={{ padding: '0 20px', display: 'flex', gap: '20px' }}>
                 {/* Diagram library — left sidebar */}
-                <div style={{ width: '220px', flexShrink: 0 }}>
-                  {/* Linked-resources navigator + properties panel, portaled in
-                  from BpmnDiagramView so they sit above the search box.
-                  #…-nav-slot is the portal target; in edit mode the bpmn-js
-                  properties panel mounts into #js-properties-panel, which is
-                  rendered here (not in BpmnDiagramView) so the node already
-                  exists when the modeler is constructed. */}
+                <div className="bpmn-diagram-library-col" style={{ width: '280px', flexShrink: 0 }}>
                   <div className="bpmn-linked-panels-top" data-testid="bpmn-linked-panels-top">
-                    <div id="bpmn-linked-panels-nav-slot" />
                     {canEditDiagram && (
                       <div id="js-properties-panel" data-testid="bpmn-properties-panel" className="bpmn-panel" />
                     )}
+                    <div id="bpmn-linked-panels-nav-slot" />
                   </div>
                   <input
                     type="text"

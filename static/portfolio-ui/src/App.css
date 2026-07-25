@@ -444,3 +444,65 @@ button.btn-primary:active, .bpmn-tb-btn.primary:active { background: var(--ads-b
   .bpmn-canvas { flex: 1 1 100%; min-height: 420px; }
   .app-content { padding: 16px; }
 }
+/* ============================================================
+   Linked-resources panels in the diagram-library sidebar
+   ------------------------------------------------------------
+   The navigator + the Jira/Confluence properties panel are portaled
+   from BpmnDiagramView into .bpmn-linked-panels-top at the TOP of the
+   left sidebar (above "Search diagrams…"). The global .bpmn-panel /
+   .bpmn-navigator rules give those elements a fixed 240–300px width
+   (and a row-flex basis) for the old in-canvas layout; inside the
+   narrow sidebar that overflowed the column. Here we (1) make them
+   fill the column, (2) stack them with the properties panel on top,
+   (3) add breathing room, and (4) let an open navigator REPLACE the
+   diagram library (search + New Diagram + list).
+   ============================================================ */
+
+/* Stack the portaled panels vertically; separate the whole stack from
+   the search box / library below it. */
+.bpmn-linked-panels-top {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;                 /* space between properties panel and navigator */
+  margin-bottom: 18px;       /* space before "Search diagrams…" / library */
+}
+
+/* The portal target stacks its (view-mode) children the same way. */
+#bpmn-linked-panels-nav-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Nothing portaled (navigator toggled off in edit mode) → collapse the
+   empty slot so it leaves no stray gap. */
+#bpmn-linked-panels-nav-slot:empty { display: none; }
+
+/* No diagram open at all → hide the empty wrapper so the library isn't
+   pushed down by a blank box. */
+.bpmn-linked-panels-top:not(:has(> #js-properties-panel)):has(> #bpmn-linked-panels-nav-slot:empty) {
+  display: none;
+  margin-bottom: 0;
+}
+
+/* Fit the panels to the sidebar column — overrides the fixed 240/300px
+   width AND the row-flex basis from the global rules. (max-height /
+   internal scroll from the global rules is intentionally kept.) */
+.bpmn-linked-panels-top .bpmn-panel,
+.bpmn-linked-panels-top .bpmn-navigator,
+#bpmn-linked-panels-nav-slot .bpmn-panel,
+#bpmn-linked-panels-nav-slot .bpmn-navigator {
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Open navigator REPLACES the diagram library; toggling Navigator OFF in
+   the toolbar brings it back. Driven purely by the navigator's DOM
+   presence (it's portaled into the slot above), so no extra React state
+   has to be threaded between App.jsx and BpmnDiagramView. */
+.bpmn-diagram-library-col:has(#bpmn-linked-panels-nav-slot .bpmn-navigator) > [data-testid="bpmn-diagram-search"],
+.bpmn-diagram-library-col:has(#bpmn-linked-panels-nav-slot .bpmn-navigator) > [data-testid="new-bpmn-diagram"],
+.bpmn-diagram-library-col:has(#bpmn-linked-panels-nav-slot .bpmn-navigator) > [data-testid="bpmn-diagram-list"] {
+  display: none;
+}

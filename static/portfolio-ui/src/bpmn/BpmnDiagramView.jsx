@@ -439,6 +439,11 @@ export default function BpmnDiagramView({
             well, so the modeler finds it at construction time. */}
         {panelSlot && createPortal(
           <>
+            {/* Properties panel (Jira/Confluence links) ABOVE the navigator.
+                View mode: this React read-only panel. Edit mode: the editable
+                panel is #js-properties-panel in App.jsx, placed above the
+                portal slot there too — so the order matches in both modes. */}
+            {!canEdit && <ViewerPropertiesPanel instance={instance} />}
             {showNavigator && (
               <LinkedResourcesNavigator
                 instance={instance}
@@ -448,7 +453,6 @@ export default function BpmnDiagramView({
                 }}
               />
             )}
-            {!canEdit && <ViewerPropertiesPanel instance={instance} />}
           </>,
           panelSlot,
         )}
