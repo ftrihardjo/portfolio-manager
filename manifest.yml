@@ -20,6 +20,8 @@ modules:
 resources:
   - key: portfolio-ui
     path: static/portfolio-ui/build
+    tunnel:
+      port: 3000
 
 permissions:
   scopes:

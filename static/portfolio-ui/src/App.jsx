@@ -16,8 +16,71 @@ import './App.css';
 
 const TABS = ['projects', 'dependencies', 'roadmap', 'summary', 'bpmn'];
 const TAB_LABELS = { bpmn: 'BPMN' };
-const GA4_ID = 'G-396823097';
-ReactGA.initialize(GA4_ID);
+// Ships inside the component so it can't be lost to a stale CSS file.
+// Layout-critical (column lock + URL wrapping) AND the polish live here.
+const BPMN_SIDEBAR_CSS = `
+#bpmn-library-col{
+  position:relative;
+  flex:0 0 300px !important; width:300px !important;
+  min-width:0 !important; max-width:300px !important;
+  overflow-x:clip;                 /* clips any stray px; never blows the flex row */
+  display:flex; flex-direction:column; gap:16px;
+  padding:6px 2px 4px 0; border-radius:10px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0) 140px),
+    radial-gradient(120% 60% at 0% 0%, rgba(0,82,204,.05), transparent 60%);
+}
+#bpmn-library-col::before{        /* ambient hairline accent */
+  content:""; position:absolute; left:8px; right:8px; top:0; height:2px;
+  background:linear-gradient(90deg,#0052cc,#00a3bf,transparent);
+  border-radius:2px; opacity:.85;
+}
+/* the actual blow-out killer: every descendant may shrink AND wrap long tokens */
+#bpmn-library-col *{ min-width:0; overflow-wrap:anywhere; word-break:break-word; }
+/* portaled panels + edit panel fill the column exactly (beats inline shellStyle) */
+#bpmn-library-col .bpmn-panel,
+#bpmn-library-col .bpmn-navigator,
+#bpmn-library-col #js-properties-panel,
+#bpmn-library-col .lr-slot-block,
+#bpmn-library-col .lr-slot-block > *,
+#bpmn-linked-panels-top,
+#bpmn-linked-panels-nav-slot{ width:100% !important; max-width:100% !important; box-sizing:border-box; }
+#bpmn-linked-panels-top{ display:flex; flex-direction:column; gap:14px; }
+#bpmn-linked-panels-nav-slot{ display:flex; flex-direction:column; gap:14px; }
+#bpmn-linked-panels-nav-slot:empty{ display:none; }
+#bpmn-linked-panels-top:has(> #js-properties-panel),
+#bpmn-linked-panels-top:has(#bpmn-linked-panels-nav-slot:not(:empty)){ margin-bottom:4px; }
+
+@keyframes bpmn-lr-rise{ from{opacity:0; transform:translateY(-8px)} to{opacity:1; transform:none} }
+#bpmn-linked-panels-nav-slot > *,
+#bpmn-library-col #js-properties-panel,
+.bpmn-diagram-library{ animation:bpmn-lr-rise .26s cubic-bezier(.2,.7,.2,1) both; }
+
+#bpmn-library-col button,
+#bpmn-library-col [role="button"],
+#bpmn-library-col li{
+  transition:transform .14s ease, box-shadow .14s ease, background-color .14s ease, border-color .14s ease;
+}
+#bpmn-library-col button:hover,
+#bpmn-library-col [role="button"]:hover{ transform:translateY(-1px); }
+#bpmn-library-col button:active,
+#bpmn-library-col [role="button"]:active{ transform:translateY(0); }
+#bpmn-linked-resources-navigator li:hover,
+#bpmn-linked-resources-navigator [role="button"]:hover{
+  background-color:rgba(0,82,204,.07); border-radius:8px;
+}
+#bpmn-linked-resources-navigator input:focus{
+  box-shadow:0 0 0 3px rgba(0,82,204,.18); border-color:#0052cc;
+}
+#bpmn-library-col :focus-visible{ outline:2px solid #0052cc; outline-offset:2px; border-radius:6px; }
+
+@media (prefers-reduced-motion: reduce){
+  #bpmn-linked-panels-nav-slot > *,
+  #bpmn-library-col #js-properties-panel,
+  .bpmn-diagram-library{ animation:none; }
+  #bpmn-library-col button, #bpmn-library-col [role="button"], #bpmn-library-col li{ transition:none; }
+}
+`;
 const tabLabel = (tab) => TAB_LABELS[tab] || (tab.charAt(0).toUpperCase() + tab.slice(1));
 
 // Builds the JQL used to open the Jira issue navigator for a given
@@ -345,6 +408,7 @@ export default function App() {
   const [selectedProjects, setSelectedProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showNavigator, setShowNavigator] = useState(false);
 
   // Advanced Filtering, Interactions, & Accessibility State
   const [searchQuery, setSearchQuery] = useState('');
@@ -1798,13 +1862,17 @@ export default function App() {
             ) : (
               <div style={{ padding: '0 20px', display: 'flex', gap: '20px' }}>
                 {/* Diagram library — left sidebar */}
-                <div className="bpmn-diagram-library-col" style={{ width: '280px', flexShrink: 0 }}>
+                <div id="bpmn-library-col" className="bpmn-diagram-library-col">
                   <div className="bpmn-linked-panels-top" data-testid="bpmn-linked-panels-top">
                     {canEditDiagram && (
-                      <div id="js-properties-panel" data-testid="bpmn-properties-panel" className="bpmn-panel" />
+                      <div className="lr-slot-block">
+                        <div id="js-properties-panel" data-testid="bpmn-properties-panel" className="bpmn-panel" />
+                      </div>
                     )}
                     <div id="bpmn-linked-panels-nav-slot" />
                   </div>
+                  {!showNavigator && (
+                    <div className="bpmn-diagram-library">
                   <input
                     type="text"
                     placeholder="Search diagrams..."
@@ -1864,6 +1932,8 @@ export default function App() {
                     })}
                   </ul>
                 </div>
+              )}
+            </div>
 
                 {/* Editor / viewer — main area */}
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -1937,6 +2007,8 @@ export default function App() {
                           modelLastEditedBy={openDiagramMeta?.lastEditedBy}
                           modelLastEditedAt={openDiagramMeta?.updatedAt}
                           currentAccountId={currentUserAccountId}
+                          showNavigator={showNavigator}
+                          onToggleNavigator={() => setShowNavigator((v) => !v)}
                         />
                       </ErrorBoundary>
                     </>
