@@ -890,7 +890,9 @@ describe('App', () => {
       fireEvent.click(screen.getByTestId('new-bpmn-diagram'));
       fireEvent.change(screen.getByTestId('new-diagram-name'), { target: { value: 'Order Process' } });
       fireEvent.change(screen.getByTestId('new-diagram-project'), { target: { value: 'PROJ1' } });
-
+      // Saving now requires a user-chosen version name (Save stays disabled
+      // until one is entered), so provide one before clicking Save.
+      fireEvent.change(screen.getByTestId('bpmn-version-name'), { target: { value: 'Initial version' } });
       await waitFor(() => screen.getByTestId('save-bpmn'));
       fireEvent.click(screen.getByTestId('save-bpmn'));
 
