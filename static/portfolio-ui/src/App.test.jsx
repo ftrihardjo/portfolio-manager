@@ -848,11 +848,16 @@ describe('App', () => {
       { id: 2, key: 'PROJ2', name: 'Beta', lead: 'Jane', leadAccountId: 'acc-other', avatarUrl: null },
     ];
 
-    it('shows an empty state and lets the lead create a new diagram', async () => {
+    it('shows an empty state and lets a user with edit permission create a new diagram', async () => {
       mockInvoke({
         getProjects: projectsMock,
         getCurrentUser: { accountId: 'acc-lead' },
         getBpmnDiagrams: [],
+        // acc-lead has edit permission on PROJ1 only — mirrors the old
+        // "acc-lead leads PROJ1" fixture, but through the real
+        // canEditProject(projectKey) resolver contract instead of a
+        // hardcoded leadAccountId comparison.
+        canEditProject: ({ projectKey }) => ({ canEdit: projectKey === 'PROJ1' }),
       });
 
       render(<App />);
@@ -863,19 +868,20 @@ describe('App', () => {
 
       fireEvent.click(screen.getByTestId('new-bpmn-diagram'));
 
-      // PROJ1's lead is the logged-in user, so it should default to
-      // editable (Modeler mounts, Save button appears) for PROJ1 (the
-      // first project in the dropdown).
+      // PROJ1 (the first project in the dropdown) is where acc-lead has
+      // edit permission, so it should default to editable: Modeler mounts,
+      // Save button appears once the async canEditProject check resolves.
       await waitFor(() => expect(screen.getByTestId('bpmn-canvas')).toBeInTheDocument());
-      expect(screen.getByTestId('save-bpmn')).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByTestId('save-bpmn')).toBeInTheDocument());
     });
 
-    it('creates a diagram as the project lead and it appears in the library', async () => {
+    it('creates a diagram as a user with edit permission and it appears in the library', async () => {
       let savedDiagram = null;
       mockInvoke({
         getProjects: projectsMock,
         getCurrentUser: { accountId: 'acc-lead' },
         getBpmnDiagrams: () => (savedDiagram ? [savedDiagram] : []),
+        canEditProject: ({ projectKey }) => ({ canEdit: projectKey === 'PROJ1' }),
         saveBpmnDiagram: (payload) => {
           savedDiagram = { id: 'diagram-1', name: payload.name, projectKey: payload.projectKey, updatedAt: '2026-01-01' };
           return { ...savedDiagram, xml: payload.xml, createdAt: '2026-01-01' };
@@ -890,6 +896,10 @@ describe('App', () => {
       fireEvent.click(screen.getByTestId('new-bpmn-diagram'));
       fireEvent.change(screen.getByTestId('new-diagram-name'), { target: { value: 'Order Process' } });
       fireEvent.change(screen.getByTestId('new-diagram-project'), { target: { value: 'PROJ1' } });
+      // canEditProject resolves asynchronously now, so the version-name
+      // field (only rendered when canEdit is true) needs a waitFor before
+      // it can be interacted with.
+      await waitFor(() => screen.getByTestId('bpmn-version-name'));
       // Saving now requires a user-chosen version name (Save stays disabled
       // until one is entered), so provide one before clicking Save.
       fireEvent.change(screen.getByTestId('bpmn-version-name'), { target: { value: 'Initial version' } });
@@ -901,12 +911,13 @@ describe('App', () => {
       });
     });
 
-    it('shows a read-only viewer (no Save button) for a diagram owned by another project\'s lead', async () => {
+    it('shows a read-only viewer (no Save button) for a diagram the user has no edit permission on', async () => {
       mockInvoke({
         getProjects: projectsMock,
         getCurrentUser: { accountId: 'acc-not-a-lead' },
         getBpmnDiagrams: [{ id: 'diagram-1', name: 'Refund Flow', projectKey: 'PROJ1', updatedAt: '2026-01-01' }],
         getBpmnDiagram: { id: 'diagram-1', name: 'Refund Flow', projectKey: 'PROJ1', xml: '<xml/>' },
+        canEditProject: () => ({ canEdit: false }),
       });
 
       render(<App />);
@@ -917,11 +928,11 @@ describe('App', () => {
       fireEvent.click(screen.getByText('Refund Flow'));
 
       await waitFor(() => expect(screen.getByTestId('bpmn-canvas')).toBeInTheDocument());
-      expect(screen.getByText(/only this project's lead can edit this diagram/i)).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByText(/you need edit permission on this project/i)).toBeInTheDocument());
       expect(screen.queryByTestId('save-bpmn')).not.toBeInTheDocument();
     });
 
-    it('only shows the Delete option next to diagrams the current user leads', async () => {
+    it('only shows the Delete option next to diagrams the current user has edit permission for', async () => {
       mockInvoke({
         getProjects: projectsMock,
         getCurrentUser: { accountId: 'acc-lead' },
@@ -929,6 +940,9 @@ describe('App', () => {
           { id: 'diagram-1', name: 'Mine', projectKey: 'PROJ1', updatedAt: '2026-01-01' },
           { id: 'diagram-2', name: 'Not mine', projectKey: 'PROJ2', updatedAt: '2026-01-01' },
         ],
+        // Batched per-row check (editableProjectKeys in App.jsx) calls this
+        // once per distinct project key shown in the sidebar list.
+        canEditProject: ({ projectKey }) => ({ canEdit: projectKey === 'PROJ1' }),
       });
 
       render(<App />);
@@ -936,7 +950,7 @@ describe('App', () => {
       fireEvent.click(screen.getByRole('tab', { name: /BPMN/i }));
       await waitFor(() => screen.getByText('Mine'));
 
-      expect(screen.getByTestId('delete-bpmn-diagram-1')).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByTestId('delete-bpmn-diagram-1')).toBeInTheDocument());
       expect(screen.queryByTestId('delete-bpmn-diagram-2')).not.toBeInTheDocument();
     });
   });

@@ -108,12 +108,34 @@ const BPMN_INDEX_KEY = 'bpmn:index';
 const bpmnDiagramKey = (id) => `bpmn:diagram:${id}`;
 const bpmnVersionKey = (id, v) => `bpmn:diagram:${id}:v${v}`;
 
-async function getProjectLeadAccountId(projectKey) {
-  const project = await jiraGet(`/rest/api/3/project/${projectKey}`, { expand: 'lead' });
-  return project.lead?.accountId ?? null;
+// Real permission check: anyone who can edit issues in the project can edit
+// its diagrams — not just the project lead. Replaces the old
+// getProjectLeadAccountId() gate, which locked every diagram to a single
+// person and caused the "editor sees v2 / viewer sees view-only, forever"
+// split, since only the lead's poll loop was ever allowed to run.
+async function canEditProject(projectKey, accountId) {
+  if (!accountId) return false;
+  const res = await api.asUser().requestJira(
+    route`/rest/api/3/mypermissions?projectKey=${projectKey}&permissions=EDIT_ISSUES`,
+    { headers: { Accept: 'application/json' } }
+  );
+  if (!res.ok) return false;
+  const perms = await res.json();
+  return !!perms.permissions?.EDIT_ISSUES?.havePermission;
 }
 
 resolver.define('getCurrentUser', async ({ context }) => ({ accountId: context?.accountId ?? null }));
+// Client-side mirror source of truth: App.jsx calls this to decide whether
+// to render the Modeler or the read-only Viewer. The save/delete resolvers
+// below re-check independently — this endpoint is never the security
+// boundary by itself, but it does need to reflect the *real* rule so the UI
+// and the enforcement never disagree.
+resolver.define('canEditProject', async ({ payload, context }) => {
+  const { projectKey } = payload;
+  const accountId = context?.accountId ?? null;
+  if (!projectKey) return { canEdit: false };
+  return { canEdit: await canEditProject(projectKey, accountId) };
+});
 resolver.define('getBpmnDiagrams', async () => (await kvs.get(BPMN_INDEX_KEY)) || []);
 resolver.define('getBpmnDiagram', async ({ payload }) => {
   const diagram = await kvs.get(bpmnDiagramKey(payload.diagramId));
@@ -154,9 +176,8 @@ resolver.define('getBpmnDiagramVersion', async ({ payload }) => {
 resolver.define('saveBpmnDiagram', async ({ payload, context }) => {
   const { diagramId, name, projectKey, xml, baseVersion, versionName } = payload;
   const accountId = context?.accountId ?? null;
-  const leadAccountId = await getProjectLeadAccountId(projectKey);
-  if (!accountId || accountId !== leadAccountId) {
-    throw new Error('Only the project lead can edit this diagram.');
+  if (!(await canEditProject(projectKey, accountId))) {
+    throw new Error('You need edit permission on this project to save this diagram.');
   }
   const id = diagramId || `bpmn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const now = new Date().toISOString();
@@ -212,8 +233,9 @@ resolver.define('deleteBpmnDiagram', async ({ payload, context }) => {
   const accountId = context?.accountId ?? null;
   const diagram = await kvs.get(bpmnDiagramKey(diagramId));
   if (!diagram) return { deleted: false };
-  const leadAccountId = await getProjectLeadAccountId(diagram.projectKey);
-  if (!accountId || accountId !== leadAccountId) throw new Error('Only the project lead can delete this diagram.');
+  if (!(await canEditProject(diagram.projectKey, accountId))) {
+    throw new Error('You need edit permission on this project to delete this diagram.');
+  }
   await kvs.delete(bpmnDiagramKey(diagramId));
   const index = (await kvs.get(BPMN_INDEX_KEY)) || [];
   await kvs.set(BPMN_INDEX_KEY, index.filter((d) => d.id !== diagramId));

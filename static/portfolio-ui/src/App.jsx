@@ -1030,16 +1030,48 @@ export default function App() {
   // enforce server-side. This one is purely for the UI (showing the
   // Modeler vs. the read-only Viewer, showing/hiding the Save button) —
   // it is never the actual security boundary, since a determined client
-  // could always claim canEdit=true locally. The resolver re-checks the
-  // real project lead every time regardless of what the client believes.
-  const canEditDiagram = useMemo(() => {
-    const projectKey = selectedDiagramId
-      ? bpmnDiagrams.find(d => d.id === selectedDiagramId)?.projectKey
-      : newDiagramProjectKey;
-    if (!projectKey || !currentUserAccountId) return false;
-    const project = projects.find(p => p.key === projectKey);
-    return !!project && project.leadAccountId === currentUserAccountId;
-  }, [selectedDiagramId, bpmnDiagrams, newDiagramProjectKey, projects, currentUserAccountId]);
+  // could always claim canEdit=true locally. The resolver re-checks real
+  // Jira EDIT_ISSUES permission every time regardless of what the client
+  // believes.
+  //
+  // This used to be a synchronous `project.leadAccountId === me` memo,
+  // which meant exactly one person on the whole project could ever edit —
+  // and, because the poll loop below was gated on canEditDiagram, everyone
+  // else never received live updates at all. Now it mirrors the resolver's
+  // real permission check (any project member with EDIT_ISSUES), fetched
+  // whenever the relevant project changes.
+  const [canEditDiagram, setCanEditDiagram] = useState(false);
+  const bpmnProjectKey = selectedDiagramId
+    ? bpmnDiagrams.find(d => d.id === selectedDiagramId)?.projectKey
+    : newDiagramProjectKey;
+  useEffect(() => {
+    let cancelled = false;
+    if (!bpmnProjectKey || !currentUserAccountId) { setCanEditDiagram(false); return undefined; }
+    invokeWithRetry('canEditProject', { projectKey: bpmnProjectKey })
+      .then((res) => { if (!cancelled) setCanEditDiagram(!!res?.canEdit); })
+      .catch(() => { if (!cancelled) setCanEditDiagram(false); });
+    return () => { cancelled = true; };
+  }, [bpmnProjectKey, currentUserAccountId]);
+
+  // Same permission, batched across every project key shown in the sidebar
+  // diagram list — drives the "you can edit / view only" label and the
+  // Delete button per row. Previously these used `project.leadAccountId
+  // === me`, same bug as canEditDiagram above.
+  const [editableProjectKeys, setEditableProjectKeys] = useState(() => new Set());
+  useEffect(() => {
+    let cancelled = false;
+    const keys = [...new Set(bpmnDiagrams.map((d) => d.projectKey).filter(Boolean))];
+    if (!currentUserAccountId || keys.length === 0) { setEditableProjectKeys(new Set()); return undefined; }
+    Promise.all(keys.map((key) =>
+      invokeWithRetry('canEditProject', { projectKey: key })
+        .then((res) => [key, !!res?.canEdit])
+        .catch(() => [key, false])
+    )).then((pairs) => {
+      if (cancelled) return;
+      setEditableProjectKeys(new Set(pairs.filter(([, ok]) => ok).map(([key]) => key)));
+    });
+    return () => { cancelled = true; };
+  }, [bpmnDiagrams, currentUserAccountId]);
   const openDiagramMeta = useMemo(
     () => (selectedDiagramId ? bpmnDiagrams.find((d) => d.id === selectedDiagramId) : null),
     [selectedDiagramId, bpmnDiagrams]
@@ -1052,7 +1084,14 @@ export default function App() {
     bpmnDiagrams.some((d) => (d.name || '').toLowerCase() === newDiagramNameTrimmed.toLowerCase())
   );
   useEffect(() => {
-    if (activeTab !== 'bpmn' || !selectedDiagramId || !canEditDiagram) return undefined;
+    // Runs for EVERYONE viewing an open diagram, not just editors — this is
+    // the actual fix for "editor sees v2, viewer is frozen on view-only".
+    // Viewers (canEdit=false) render the read-only NavigatedViewer, which
+    // never sets bpmnDirty, so their branch always takes the fast
+    // "safe to auto-reload" path below; editors keep the existing
+    // dirty-check / conflict-banner behaviour so in-progress edits are
+    // never silently clobbered.
+    if (activeTab !== 'bpmn' || !selectedDiagramId) return undefined;
     const id = selectedDiagramId;
 
     const applyRemote = async () => {
@@ -1073,12 +1112,12 @@ export default function App() {
         const meta = (index || []).find((d) => d.id === id);
         if (!meta || meta.version == null) return;
         if (meta.version === bpmnVersionRef.current) return;     // no change
-        if (!bpmnDirtyRef.current) await applyRemote();          // safe to take it
-        else setBpmnConflict(meta);                              // don't clobber local work
+        if (!canEditDiagram || !bpmnDirtyRef.current) await applyRemote(); // viewers & clean editors: safe to take it
+        else setBpmnConflict(meta);                                       // editor with local edits: don't clobber
       } catch (e) { /* ignore */ }
     };
 
-    const interval = setInterval(tick, 8000);
+    const interval = setInterval(tick, 4000); // was 8000 — closer to real-time; raise if invocation volume is a concern
     return () => clearInterval(interval);
   }, [activeTab, selectedDiagramId, canEditDiagram]);
   // Filter the left-hand diagram library by name.
@@ -1956,8 +1995,7 @@ export default function App() {
                       <li style={{ color: '#666', fontSize: '13px' }}>No diagrams match your search.</li>
                     )}
                     {filteredBpmnDiagrams.map(d => {
-                      const project = projects.find(p => p.key === d.projectKey);
-                      const isOwner = project?.leadAccountId === currentUserAccountId;
+                      const isOwner = editableProjectKeys.has(d.projectKey);
                       return (
                         <li key={d.id} style={{ marginBottom: '6px' }}>
                           <button
@@ -2034,7 +2072,7 @@ export default function App() {
                       )}
                       {!canEditDiagram && (
                         <p style={{ fontSize: '12px', color: '#666' }}>
-                          View only — only this project's lead can edit this diagram.
+                          View only — you need edit permission on this project to change this diagram.
                         </p>
                       )}
                       {bpmnConflict && (

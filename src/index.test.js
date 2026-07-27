@@ -419,9 +419,9 @@ describe('BPMN diagrams (getCurrentUser, getBpmnDiagrams, getBpmnDiagram, saveBp
   const LEAD_ACCOUNT_ID = 'lead-acc-1';
   const OTHER_ACCOUNT_ID = 'other-acc-2';
 
-  function mockProjectLead(projectKey, accountId) {
-    // getProjectLeadAccountId() calls GET /rest/api/3/project/{key}?expand=lead
-    mockJiraResponse({ lead: { accountId } });
+  function mockCanEdit(canEdit) {
+    // canEditProject() calls GET /rest/api/3/mypermissions?projectKey=...&permissions=EDIT_ISSUES
+    mockJiraResponse({ permissions: { EDIT_ISSUES: { havePermission: canEdit } } });
   }
 
   it('returns the calling user\'s accountId from context', async () => {
@@ -434,8 +434,8 @@ describe('BPMN diagrams (getCurrentUser, getBpmnDiagrams, getBpmnDiagram, saveBp
     expect(result).toEqual([]);
   });
 
-  it('lets the project lead create a new diagram', async () => {
-    mockProjectLead('TEST', LEAD_ACCOUNT_ID);
+  it('lets a user with edit permission create a new diagram', async () => {
+    mockCanEdit(true);
 
     const result = await getResolver('saveBpmnDiagram')({
       payload: { diagramId: null, name: 'Order Process', projectKey: 'TEST', xml: '<xml/>' },
@@ -449,39 +449,39 @@ describe('BPMN diagrams (getCurrentUser, getBpmnDiagrams, getBpmnDiagram, saveBp
     const index = await getResolver('getBpmnDiagrams')({});
     expect(index).toEqual([{ id: result.id, name: 'Order Process', projectKey: 'TEST', updatedAt: result.updatedAt, lastEditedBy: 'lead-acc-1', version: 1, latestVersionName: 'v1' }]);  });
 
-  it('rejects a save from anyone who is not the project lead', async () => {
-    mockProjectLead('TEST', LEAD_ACCOUNT_ID);
+  it('rejects a save from anyone without edit permission', async () => {
+    mockCanEdit(false);
 
     await expect(
       getResolver('saveBpmnDiagram')({
         payload: { diagramId: null, name: 'Order Process', projectKey: 'TEST', xml: '<xml/>' },
         context: { accountId: OTHER_ACCOUNT_ID },
       })
-    ).rejects.toThrow('Only the project lead can edit this diagram.');
+    ).rejects.toThrow('You need edit permission on this project to save this diagram.');
 
     const index = await getResolver('getBpmnDiagrams')({});
     expect(index).toEqual([]);
   });
 
   it('rejects a save with no authenticated user at all', async () => {
-    mockProjectLead('TEST', LEAD_ACCOUNT_ID);
-
+    // canEditProject() short-circuits on a missing accountId before ever
+    // calling requestJira, so no mock response needs to be queued here.
     await expect(
       getResolver('saveBpmnDiagram')({
         payload: { diagramId: null, name: 'Order Process', projectKey: 'TEST', xml: '<xml/>' },
         context: {},
       })
-    ).rejects.toThrow('Only the project lead can edit this diagram.');
+    ).rejects.toThrow('You need edit permission on this project to save this diagram.');
   });
 
   it('updates an existing diagram in place, preserving createdAt', async () => {
-    mockProjectLead('TEST', LEAD_ACCOUNT_ID);
+    mockCanEdit(true);
     const created = await getResolver('saveBpmnDiagram')({
       payload: { diagramId: null, name: 'v1', projectKey: 'TEST', xml: '<xml v="1"/>' },
       context: { accountId: LEAD_ACCOUNT_ID },
     });
 
-    mockProjectLead('TEST', LEAD_ACCOUNT_ID);
+    mockCanEdit(true);
     const updated = await getResolver('saveBpmnDiagram')({
       payload: { diagramId: created.id, name: 'v2', projectKey: 'TEST', xml: '<xml v="2"/>' },
       context: { accountId: LEAD_ACCOUNT_ID },
@@ -497,7 +497,7 @@ describe('BPMN diagrams (getCurrentUser, getBpmnDiagrams, getBpmnDiagram, saveBp
   });
 
   it('fetches a single diagram by id, and throws for an unknown id', async () => {
-    mockProjectLead('TEST', LEAD_ACCOUNT_ID);
+    mockCanEdit(true);
     const created = await getResolver('saveBpmnDiagram')({
       payload: { diagramId: null, name: 'Order Process', projectKey: 'TEST', xml: '<xml/>' },
       context: { accountId: LEAD_ACCOUNT_ID },
@@ -511,14 +511,14 @@ describe('BPMN diagrams (getCurrentUser, getBpmnDiagrams, getBpmnDiagram, saveBp
     ).rejects.toThrow('Diagram does-not-exist not found');
   });
 
-  it('lets the project lead delete a diagram', async () => {
-    mockProjectLead('TEST', LEAD_ACCOUNT_ID);
+  it('lets a user with edit permission delete a diagram', async () => {
+    mockCanEdit(true);
     const created = await getResolver('saveBpmnDiagram')({
       payload: { diagramId: null, name: 'Order Process', projectKey: 'TEST', xml: '<xml/>' },
       context: { accountId: LEAD_ACCOUNT_ID },
     });
 
-    mockProjectLead('TEST', LEAD_ACCOUNT_ID);
+    mockCanEdit(true);
     const result = await getResolver('deleteBpmnDiagram')({
       payload: { diagramId: created.id },
       context: { accountId: LEAD_ACCOUNT_ID },
@@ -531,20 +531,20 @@ describe('BPMN diagrams (getCurrentUser, getBpmnDiagrams, getBpmnDiagram, saveBp
     ).rejects.toThrow();
   });
 
-  it('rejects a delete from anyone who is not the project lead', async () => {
-    mockProjectLead('TEST', LEAD_ACCOUNT_ID);
+  it('rejects a delete from anyone without edit permission', async () => {
+    mockCanEdit(true);
     const created = await getResolver('saveBpmnDiagram')({
       payload: { diagramId: null, name: 'Order Process', projectKey: 'TEST', xml: '<xml/>' },
       context: { accountId: LEAD_ACCOUNT_ID },
     });
 
-    mockProjectLead('TEST', LEAD_ACCOUNT_ID);
+    mockCanEdit(false);
     await expect(
       getResolver('deleteBpmnDiagram')({
         payload: { diagramId: created.id },
         context: { accountId: OTHER_ACCOUNT_ID },
       })
-    ).rejects.toThrow('Only the project lead can delete this diagram.');
+    ).rejects.toThrow('You need edit permission on this project to delete this diagram.');
 
     // Still there, since the delete was rejected.
     expect(await getResolver('getBpmnDiagrams')({})).toHaveLength(1);
