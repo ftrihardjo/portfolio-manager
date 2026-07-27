@@ -106,6 +106,7 @@ resolver.define('getRoadmapEpics', async ({ payload }) => {
 // ─── BPMN library + collaborative editing (poll + optimistic lock) ─────────
 const BPMN_INDEX_KEY = 'bpmn:index';
 const bpmnDiagramKey = (id) => `bpmn:diagram:${id}`;
+const bpmnVersionKey = (id, v) => `bpmn:diagram:${id}:v${v}`;
 
 async function getProjectLeadAccountId(projectKey) {
   const project = await jiraGet(`/rest/api/3/project/${projectKey}`, { expand: 'lead' });
@@ -117,14 +118,41 @@ resolver.define('getBpmnDiagrams', async () => (await kvs.get(BPMN_INDEX_KEY)) |
 resolver.define('getBpmnDiagram', async ({ payload }) => {
   const diagram = await kvs.get(bpmnDiagramKey(payload.diagramId));
   if (!diagram) throw new Error(`Diagram ${payload.diagramId} not found`);
+  // Read-only back-compat: legacy records have no `versions` array, so
+  // synthesise one from the head so the version switcher still works.
+  if (!Array.isArray(diagram.versions) && typeof diagram.version === 'number') {
+    diagram.versions = [{
+      version: diagram.version,
+      name: diagram.latestVersionName || `v${diagram.version}`,
+      savedAt: diagram.updatedAt,
+      savedBy: diagram.lastEditedBy,
+    }];
+  }
   return diagram;
 });
+// Serve one named version's XML + meta without loading the whole history.
+// Falls back to the record's head XML for legacy versions whose per-version
+// key was never written.
+resolver.define('getBpmnDiagramVersion', async ({ payload }) => {
+  const { diagramId, version } = payload;
+  const stored = await kvs.get(bpmnVersionKey(diagramId, version));
+  if (stored) return stored;
+  const diagram = await kvs.get(bpmnDiagramKey(diagramId));
+  if (!diagram) throw new Error(`Diagram ${diagramId} not found`);
+  if (diagram.version === version) {
+    return {
+      version,
+      name: diagram.latestVersionName || `v${version}`,
+      savedAt: diagram.updatedAt,
+      savedBy: diagram.lastEditedBy,
+      xml: diagram.xml,
+    };
+  }
+  throw new Error(`Version ${version} not found for diagram ${diagramId}`);
+});
 
-// ONE definition. Stamps version/lastEditedBy/updatedAt so the UI can poll for
-// remote changes, and rejects a save whose baseVersion is stale (optimistic
-// concurrency) so two editors can't silently clobber each other.
 resolver.define('saveBpmnDiagram', async ({ payload, context }) => {
-  const { diagramId, name, projectKey, xml, baseVersion } = payload;
+  const { diagramId, name, projectKey, xml, baseVersion, versionName } = payload;
   const accountId = context?.accountId ?? null;
   const leadAccountId = await getProjectLeadAccountId(projectKey);
   if (!accountId || accountId !== leadAccountId) {
@@ -141,11 +169,39 @@ resolver.define('saveBpmnDiagram', async ({ payload, context }) => {
   }
 
   const version = (existing?.version || 0) + 1;
-  const record = { id, name, projectKey, xml, createdAt: existing?.createdAt ?? now, updatedAt: now, version, lastEditedBy: accountId };
+  // The user names every version. v<n> is only a fallback for old clients.
+  const vName = (typeof versionName === 'string' && versionName.trim()) ? versionName.trim() : `v${version}`;
+  const versionEntry = { version, name: vName, savedAt: now, savedBy: accountId };
+
+  // Append-only history. Migrate a legacy record (no `versions`) by seeding it
+  // from the head, and back-fill its version key so it stays servable.
+  let versions = Array.isArray(existing?.versions) ? existing.versions.slice() : [];
+  if (!versions.length && existing && typeof existing.version === 'number') {
+    const legacy = {
+      version: existing.version,
+      name: existing.latestVersionName || `v${existing.version}`,
+      savedAt: existing.updatedAt,
+      savedBy: existing.lastEditedBy,
+    };
+    versions.push(legacy);
+    await kvs.set(bpmnVersionKey(id, existing.version), { ...legacy, xml: existing.xml });
+  }
+  versions.push(versionEntry);
+
+  // Each version's XML lives in its own key (small values; serve any version
+  // without loading the whole history).
+  await kvs.set(bpmnVersionKey(id, version), { ...versionEntry, xml });
+
+  const record = {
+    id, name, projectKey, xml,
+    createdAt: existing?.createdAt ?? now, updatedAt: now,
+    version, lastEditedBy: accountId,
+    versions, latestVersionName: vName,
+  };
   await kvs.set(bpmnDiagramKey(id), record);
 
   const index = (await kvs.get(BPMN_INDEX_KEY)) || [];
-  const meta = { id, name, projectKey, updatedAt: now, lastEditedBy: accountId, version };
+  const meta = { id, name, projectKey, updatedAt: now, lastEditedBy: accountId, version, latestVersionName: vName };
   const nextIndex = diagramId ? index.map((d) => (d.id === id ? meta : d)) : [...index, meta];
   await kvs.set(BPMN_INDEX_KEY, nextIndex);
   return record;

@@ -175,8 +175,13 @@ function LinkedResourcesNavigator({ instance, onNavigate }) {
 
 export default function BpmnDiagramView({
   diagramXml, canEdit, onSave, onDirtyChange, saveDisabled,
-  // viadee-style model header (all optional / backwards compatible)
-  modelName, modelVersion, modelLastEditedBy, modelLastEditedAt, currentAccountId,
+  modelName, modelVersion, modelVersionName, modelLastEditedBy, modelLastEditedAt, currentAccountId,
+  // Navigator visibility is owned by App.jsx so the diagram library can hide
+  // while the navigator is open. Controlled when onToggleNavigator is passed;
+  // otherwise fall back to local state (keeps it usable standalone).
+  showNavigator: showNavigatorProp, onToggleNavigator,
+  // Named version history (data + invoke calls live in App.jsx).
+  versions, viewingVersion, onSelectVersion, versionName, onVersionNameChange,
 }) {
   const canvasRef = useRef(null);
   const instanceRef = useRef(null);
@@ -200,7 +205,10 @@ export default function BpmnDiagramView({
   // the End Event's linked resources; the navigator gives the user an
   // always-visible index of every element with a jira:LinkedResources
   // extension, plus a one-click jump to that element.
-  const [showNavigator, setShowNavigator] = useState(true);
+  const [localNav, setLocalNav] = useState(true);
+  const controlledNav = typeof onToggleNavigator === 'function';
+  const showNavigator = controlledNav ? !!showNavigatorProp : localNav;
+  const toggleNavigator = () => (controlledNav ? onToggleNavigator() : setLocalNav((v) => !v));
   // DOM node in App.jsx's left sidebar (above the "Search diagrams…" input)
   // that we portal the navigator + read-only properties panel into. Set in
   // the modeler effect (same tick as setInstance) so the portal appears at
@@ -362,7 +370,14 @@ export default function BpmnDiagramView({
       {/* Model header — name + version + last edited (viadee-style) */}
       <div className="bpmn-modelbar">
         <span className="bpmn-modelbar-title">{modelName || 'Untitled diagram'}</span>
-        {typeof modelVersion === 'number' && <span className="bpmn-chip">v{modelVersion}</span>}
+                    {typeof modelVersion === 'number' && (
+                      <span
+                        className="bpmn-chip"
+                        title={modelVersionName ? `Version “${modelVersionName}” (revision ${modelVersion})` : `Revision ${modelVersion}`}
+                      >
+                        {modelVersionName || `v${modelVersion}`}
+                      </span>
+                    )}
         <span className="bpmn-modelbar-meta">
           {modelLastEditedAt && (
             <>Last edited {formatRelative(modelLastEditedAt)}{editedByYou ? ' by you' : ''}</>
@@ -377,6 +392,19 @@ export default function BpmnDiagramView({
           <>
             <div className="bpmn-tb-group">
               <button className="bpmn-tb-btn primary" onClick={handleSave} disabled={saveDisabled} data-testid="save-bpmn" title="Save diagram">Save</button>
+              <div className="bpmn-tb-group bpmn-tb-version-name">
+                <label className="bpmn-tb-label" htmlFor="bpmn-version-name" title="You name every version you save — never an auto v1/v2">
+                  Save as
+                  <input
+                    id="bpmn-version-name"
+                    type="text"
+                    data-testid="bpmn-version-name"
+                    placeholder="version name (e.g. release-1.0)"
+                    value={versionName || ''}
+                    onChange={(e) => onVersionNameChange && onVersionNameChange(e.target.value)}
+                  />
+                </label>
+              </div>
             </div>
             <div className="bpmn-tb-group">
               <button className="bpmn-tb-btn" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)">↶ Undo</button>
@@ -393,9 +421,28 @@ export default function BpmnDiagramView({
         )}
 
         <div className="bpmn-tb-group">
+          {versions && versions.length > 0 && (
+            <div className="bpmn-tb-group bpmn-tb-version-switch">
+              <label className="bpmn-tb-label" htmlFor="bpmn-version-switch" title="Open a saved version to view or work on it">
+                Version
+                <select
+                  id="bpmn-version-switch"
+                  data-testid="bpmn-version-switch"
+                  value={viewingVersion ?? ''}
+                  onChange={(e) => onSelectVersion && onSelectVersion(Number(e.target.value))}
+                >
+                  {[...versions].reverse().map((v) => (
+                    <option key={v.version} value={v.version}>
+                      {v.name}{v.savedAt ? ` · ${formatRelative(v.savedAt)}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
           <button
             className={`bpmn-tb-btn ${showNavigator ? 'primary' : ''}`}
-            onClick={() => setShowNavigator((v) => !v)}
+            onClick={toggleNavigator}
             data-testid="toggle-navigator"
             title={showNavigator ? 'Hide the Linked Resources navigator' : 'Show the Linked Resources navigator'}
             aria-pressed={showNavigator}

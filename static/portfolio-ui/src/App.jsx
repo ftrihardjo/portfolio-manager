@@ -439,8 +439,14 @@ export default function App() {
   const [statusFilter, setStatusFilter] = useState('');
   const [leadSearch, setLeadSearch] = useState('');
   const [bpmnConflict, setBpmnConflict] = useState(null);   // { version, lastEditedBy, updatedAt }
-  const bpmnVersionRef = useRef(null);                      // version we currently hold
-  const bpmnDirtyRef = useRef(false);
+  const bpmnVersionRef = useRef(null);
+  // Named version history. `versions` = saved versions of the open diagram;
+  // `viewingVersion` = the version number currently in the editor;
+  // `versionName` = the name the user types for their NEXT save (Save stays
+  // disabled until it's non-empty, so the user always names what they save).
+  const [versions, setVersions] = useState([]);
+  const [viewingVersion, setViewingVersion] = useState(null);
+  const [versionName, setVersionName] = useState('');  const bpmnDirtyRef = useRef(false);
   useEffect(() => { bpmnDirtyRef.current = bpmnDirty; }, [bpmnDirty]);
   // Collaborative editing via polling (Forge has no push channel). We poll the
   // cheap index; on a version change we either auto-reload (no local edits) or
@@ -612,10 +618,32 @@ export default function App() {
       setSelectedDiagramId(diagram.id);
       setSelectedDiagramXml(diagram.xml);
       setBpmnDirty(false);
-      bpmnVersionRef.current = diagram.version ?? null;   // +
-      setBpmnConflict(null);                              // +
+      bpmnVersionRef.current = diagram.version ?? null;
+      setBpmnConflict(null);
+      const vs = normalizeVersions(diagram);
+      setVersions(vs);
+      setViewingVersion(diagram.version ?? (vs.length ? vs[vs.length - 1].version : null));
+      setVersionName('');
     } catch (e) { setError('Failed to open diagram: ' + e.message); }
     finally { setLoading(false); }
+  }
+
+  // Load a saved version into the editor ("work on this version"). History is
+  // append-only: editing + saving a past version creates a NEW named version on
+  // top of the head; it never overwrites history. The lock stays pinned to the
+  // head so a concurrent save surfaces as a conflict instead of clobbering.
+  async function loadBpmnVersion(version) {
+    if (!selectedDiagramId) return;
+    try {
+      const v = await invokeWithRetry('getBpmnDiagramVersion', { diagramId: selectedDiagramId, version });
+      setSelectedDiagramXml(v.xml);
+      setViewingVersion(version);
+      setBpmnDirty(false);
+      setBpmnConflict(null);
+      setVersionName('');
+      const head = versions.reduce((m, x) => Math.max(m, x.version || 0), bpmnVersionRef.current || 0);
+      bpmnVersionRef.current = head || bpmnVersionRef.current;
+    } catch (e) { setError('Failed to load version: ' + e.message); }
   }
 
   function startNewBpmnDiagram() {
@@ -626,6 +654,8 @@ export default function App() {
   }
 
   async function saveBpmnDiagram(xml) {
+    const vname = (versionName || '').trim();
+    if (!vname) { setError('Enter a version name before saving.'); return; }
     try {
       const diagram = await invokeWithRetry('saveBpmnDiagram', {
         diagramId: selectedDiagramId,
@@ -636,15 +666,20 @@ export default function App() {
           ? bpmnDiagrams.find((d) => d.id === selectedDiagramId)?.projectKey
           : newDiagramProjectKey,
         xml,
-        baseVersion: bpmnVersionRef.current,            // + server rejects if stale
+        versionName: vname,
+        baseVersion: bpmnVersionRef.current,
       });
       setSelectedDiagramId(diagram.id);
-      bpmnVersionRef.current = diagram.version ?? null; // +
-      setBpmnConflict(null);                            // +
-      setSrAnnouncement(`Saved diagram ${diagram.name}`);
+      bpmnVersionRef.current = diagram.version ?? null;
+      setBpmnConflict(null);
+      const vs = normalizeVersions(diagram);
+      setVersions(vs);
+      setViewingVersion(diagram.version ?? null);
+      setVersionName('');
+      setSrAnnouncement(`Saved diagram ${diagram.name} as “${vname}”`);
       await loadBpmnDiagrams();
     } catch (e) {
-      setError('Failed to save diagram: ' + e.message); // conflict message surfaces here too
+      setError('Failed to save diagram: ' + e.message);
     }
   }
 
@@ -1023,9 +1058,11 @@ export default function App() {
     const applyRemote = async () => {
       try {
         const full = await invokeWithRetry('getBpmnDiagram', { diagramId: id });
-        setSelectedDiagramXml(full.xml);          // prop change -> view re-imports
+        setSelectedDiagramXml(full.xml); // prop change -> view re-imports
         bpmnVersionRef.current = full.version ?? null;
         setBpmnDirty(false);
+        setVersions(normalizeVersions(full));
+        setViewingVersion(full.version ?? null);
         setBpmnConflict(null);
       } catch (e) { /* ignore transient poll errors */ }
     };
@@ -1125,7 +1162,30 @@ export default function App() {
       topRisks,
     };
   }, [projectStats, processedEpics, hasCircularDependency, circularDependencyPath]);
-
+  // Build [{ version, name, savedAt, savedBy }] from a diagram record, oldest
+  // first (last = head). Tolerates legacy records that pre-date named history.
+  function normalizeVersions(rec) {
+    if (!rec) return [];
+    if (Array.isArray(rec.versions) && rec.versions.length) {
+      return rec.versions
+        .map((v) => ({
+          version: v.version,
+          name: v.name || `v${v.version}`,
+          savedAt: v.savedAt || rec.updatedAt,
+          savedBy: v.savedBy || rec.lastEditedBy,
+        }))
+        .sort((a, b) => a.version - b.version);
+    }
+    if (typeof rec.version === 'number') {
+      return [{
+        version: rec.version,
+        name: rec.latestVersionName || `v${rec.version}`,
+        savedAt: rec.updatedAt,
+        savedBy: rec.lastEditedBy,
+      }];
+    }
+    return [];
+  }
   function formatDate(dateStr) {
     if (!dateStr) return '';
     const parts = dateStr.split('-');
@@ -1989,8 +2049,7 @@ export default function App() {
                             Your unsaved changes would be overwritten by a reload.
                           </span>
                           <span style={{ display: 'flex', gap: 6 }}>
-                            <button onClick={reloadBpmnFromServer} style={{ fontSize: 11 }}>Reload remote</button>
-                            <button onClick={() => setBpmnConflict(null)} style={{ fontSize: 11, background: 'none', border: 'none', cursor: 'pointer' }}>Keep mine</button>
+                            <button onClick={() => openBpmnDiagram(selectedDiagramId)} style={{ fontSize: 11 }}>Reload remote</button>                            <button onClick={() => setBpmnConflict(null)} style={{ fontSize: 11, background: 'none', border: 'none', cursor: 'pointer' }}>Keep mine</button>
                           </span>
                         </div>
                       )}
@@ -2001,14 +2060,20 @@ export default function App() {
                           canEdit={canEditDiagram}
                           onSave={saveBpmnDiagram}
                           onDirtyChange={setBpmnDirty}
-                          saveDisabled={newDiagramNameInvalid}
+                          saveDisabled={newDiagramNameInvalid || !versionName.trim()}
                           modelName={selectedDiagramId ? (openDiagramMeta?.name || '') : (newDiagramName.trim() || 'New diagram')}
-                          modelVersion={openDiagramMeta?.version}
+                          modelVersion={viewingVersion ?? openDiagramMeta?.version}
+                          modelVersionName={versions.find((v) => v.version === viewingVersion)?.name}
                           modelLastEditedBy={openDiagramMeta?.lastEditedBy}
                           modelLastEditedAt={openDiagramMeta?.updatedAt}
                           currentAccountId={currentUserAccountId}
                           showNavigator={showNavigator}
                           onToggleNavigator={() => setShowNavigator((v) => !v)}
+                          versions={versions}
+                          viewingVersion={viewingVersion}
+                          onSelectVersion={loadBpmnVersion}
+                          versionName={versionName}
+                          onVersionNameChange={setVersionName}
                         />
                       </ErrorBoundary>
                     </>
