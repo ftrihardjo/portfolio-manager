@@ -1,44 +1,59 @@
-import React from 'react';
+﻿import React from 'react';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
-import '@testing-library/jest-dom';
+import '@testing-library/jest-dom/vitest';
 import App from './App';
 import { invoke, router } from '@forge/bridge';
-
-jest.mock('@forge/bridge', () => ({
-  invoke: jest.fn(),
+import { jsPDF } from 'jspdf';
+vi.mock('@forge/bridge', () => ({
+  invoke: vi.fn(),
   router: {
-    open: jest.fn().mockResolvedValue(undefined),
-    navigate: jest.fn().mockResolvedValue(undefined),
-    getUrl: jest.fn().mockResolvedValue(new URL('https://example.atlassian.net/')),
-    reload: jest.fn(),
+    open: vi.fn().mockResolvedValue(undefined),
+    navigate: vi.fn().mockResolvedValue(undefined),
+    getUrl: vi.fn().mockResolvedValue(new URL('https://example.atlassian.net/')),
+    reload: vi.fn(),
+  },
+  // App.jsx calls realtime.subscribe(channel, callback) and expects back an
+  // object with .unsubscribe(). No test currently exercises live realtime
+  // events, so a resolved no-op subscription is enough to let setupRealtime()
+  // run without throwing.
+  realtime: {
+    subscribe: vi.fn().mockResolvedValue({ unsubscribe: vi.fn() }),
   },
 }));
 
 // jsdom has no canvas support, so vis-network can't actually render in
-// tests. Mock it with a minimal stand-in — the graph's own rendering isn't
+// tests. Mock it with a minimal stand-in ”” the graph's own rendering isn't
 // under test here (it's a visual diagram), but the surrounding component
 // still needs to mount without throwing.
-jest.mock('vis-network/standalone', () => ({
-  Network: jest.fn().mockImplementation(() => ({
-    on: jest.fn(),
-    destroy: jest.fn(),
-  })),
-  DataSet: jest.fn().mockImplementation((items) => items || []),
+vi.mock('vis-network/standalone', () => ({
+  Network: vi.fn().mockImplementation(function () {
+    return { on: vi.fn(), destroy: vi.fn() };
+  }),
+  // App.jsx calls `new DataSet(items)`. Vitest's mock functions can only be
+  // used as a constructor when the implementation is a `function`, not an
+  // arrow function (arrow functions have no [[Construct]] — `new` on one
+  // throws "is not a constructor"). Must return `this`-assignable data, so
+  // wrap the array rather than returning it bare from an arrow.
+  DataSet: vi.fn().mockImplementation(function (items) {
+    return items || [];
+  }),
 }));
 
 // jsdom lacks the browser download APIs jsPDF's save() relies on
 // (URL.createObjectURL etc). Mock it so components using it can be tested
 // without actually exercising the real PDF-generation internals, which
 // isn't this app's code to test in the first place.
-jest.mock('jspdf', () => ({
-  jsPDF: jest.fn().mockImplementation(() => ({
-    setFontSize: jest.fn(),
-    setTextColor: jest.fn(),
-    text: jest.fn(),
-    splitTextToSize: jest.fn((str) => [str]),
-    addPage: jest.fn(),
-    save: jest.fn(),
-  })),
+vi.mock('jspdf', () => ({
+  jsPDF: vi.fn().mockImplementation(function () {
+    return {
+      setFontSize: vi.fn(),
+      setTextColor: vi.fn(),
+      text: vi.fn(),
+      splitTextToSize: vi.fn((str) => [str]),
+      addPage: vi.fn(),
+      save: vi.fn(),
+    };
+  }),
 }));
 
 // bpmn-js ships raw ESM source in node_modules (no CJS build), which Jest
@@ -48,15 +63,15 @@ jest.mock('jspdf', () => ({
 // minimal stand-in exposing the same instance methods App.jsx calls.
 function mockBpmnInstanceFactory() {
   return {
-    importXML: jest.fn().mockResolvedValue({ warnings: [] }),
-    saveXML: jest.fn().mockResolvedValue({ xml: 'mock-saved' }),
-    on: jest.fn(),
-    off: jest.fn(), // navigator unsubscribes on unmount
-    destroy: jest.fn(),
-    get: jest.fn().mockImplementation((name) => {
-      if (name === 'eventBus') return { on: jest.fn(), off: jest.fn() };
+    importXML: vi.fn().mockResolvedValue({ warnings: [] }),
+    saveXML: vi.fn().mockResolvedValue({ xml: 'mock-saved' }),
+    on: vi.fn(),
+    off: vi.fn(), // navigator unsubscribes on unmount
+    destroy: vi.fn(),
+    get: vi.fn().mockImplementation((name) => {
+      if (name === 'eventBus') return { on: vi.fn(), off: vi.fn() };
       if (name === 'elementRegistry') return { getAll: () => [] }; // navigator.collect()
-      if (name === 'propertiesPanel') return { registerProvider: jest.fn() }; // silences JiraPropertiesProvider
+      if (name === 'propertiesPanel') return { registerProvider: vi.fn() }; // silences JiraPropertiesProvider
       // commandStack / canvas stay undefined; the component already
       // null-checks commandStack and wraps canvas.viewbox() in try/catch.
       return undefined;
@@ -64,34 +79,38 @@ function mockBpmnInstanceFactory() {
   };
 }
 
-jest.mock('bpmn-js/lib/util/ModelUtil', () => ({
-  getBusinessObject: jest.fn((element) => element?.businessObject || {}),
-  is: jest.fn(() => false),
+vi.mock('bpmn-js/lib/util/ModelUtil', () => ({
+  getBusinessObject: vi.fn((element) => element?.businessObject || {}),
+  is: vi.fn(() => false),
 }));
 
-jest.mock('bpmn-js/lib/Modeler', () => jest.fn().mockImplementation(() => mockBpmnInstanceFactory()));
-jest.mock('bpmn-js/lib/NavigatedViewer', () => jest.fn().mockImplementation(() => mockBpmnInstanceFactory()));
+vi.mock('bpmn-js/lib/Modeler', () => ({
+  default: vi.fn().mockImplementation(function () { return mockBpmnInstanceFactory(); }),
+}));
+vi.mock('bpmn-js/lib/NavigatedViewer', () => ({
+  default: vi.fn().mockImplementation(function () { return mockBpmnInstanceFactory(); }),
+}));
 
 // ✅ ADD THESE THREE MOCKS TO PREVENT JEST FROM PARSING ESM FILES:
-jest.mock('@bpmn-io/properties-panel', () => ({
+vi.mock('@bpmn-io/properties-panel', () => ({
   __esModule: true,
-  isTextFieldEntryEdited: jest.fn(),
-  TextAreaEntry: jest.fn(),
-  TextFieldEntry: jest.fn(),
+  isTextFieldEntryEdited: vi.fn(),
+  TextAreaEntry: vi.fn(),
+  TextFieldEntry: vi.fn(),
 }));
 
-jest.mock('bpmn-js-properties-panel', () => ({
+vi.mock('bpmn-js-properties-panel', () => ({
   BpmnPropertiesPanelModule: 'mocked-properties-panel',
-  useService: jest.fn(),
+  useService: vi.fn(),
 }));
 
-jest.mock('bpmn-js-token-simulation', () => 'mocked-token-simulation');
-jest.mock('react-ga4', () => ({
+vi.mock('bpmn-js-token-simulation', () => ({ default: 'mocked-token-simulation' }));
+vi.mock('react-ga4', () => ({
   __esModule: true,
   default: {
-    initialize: jest.fn(),
-    send: jest.fn(),
-    event: jest.fn(),
+    initialize: vi.fn(),
+    send: vi.fn(),
+    event: vi.fn(),
   },
 }));
 
@@ -120,9 +139,9 @@ describe('App', () => {
     invoke.mockClear();
   });
 
-  // ──────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // BASIC RENDERING TESTS
-  // ──────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   it('renders header and three tabs', () => {
     render(<App />);
     expect(screen.getByText('BPMN & Portfolio Manager')).toBeInTheDocument();
@@ -144,9 +163,9 @@ describe('App', () => {
     expect(projectsTab).toHaveAttribute('aria-selected', 'true');
   });
 
-  // ──────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // PROJECTS TAB TESTS
-  // ──────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   describe('Projects tab', () => {
     const projectsMock = [
       { id: 1, key: 'PROJ1', name: 'Alpha', lead: 'John Doe', avatarUrl: 'avatar1.png', startDate: '2024-01-01', dueDate: '2024-06-01' },
@@ -203,7 +222,7 @@ describe('App', () => {
 
       const risk1 = await screen.findByTestId('risk-PROJ1');
       expect(risk1).toHaveTextContent('20');
-      // 20 is in the "low risk" band (< 34) — green.
+      // 20 is in the "low risk" band (< 34) ”” green.
       expect(risk1.querySelector('span')).toHaveStyle({ background: '#e3fcef' });
 
       const risk2 = screen.getByTestId('risk-PROJ2');
@@ -229,7 +248,7 @@ describe('App', () => {
       }, { timeout: 3500 });
     });
 
-    // ── NEW: Sorting Tests ─────────────────────────────────────────────
+    // â”€â”€ NEW: Sorting Tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     it('sorts projects by key ascending by default', async () => {
       render(<App />);
       await waitFor(() => screen.getByText('Alpha'));
@@ -285,7 +304,7 @@ describe('App', () => {
       });
     });
 
-    // ── NEW: Pagination Tests ──────────────────────────────────────────
+    // â”€â”€ NEW: Pagination Tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     it('disables Prev button on first page', async () => {
       render(<App />);
       await waitFor(() => screen.getByText('Alpha'));
@@ -302,7 +321,7 @@ describe('App', () => {
       expect(nextBtn).toBeDisabled();
     });
 
-    // ── NEW: Project Navigation Click Tests ────────────────────────────
+    // â”€â”€ NEW: Project Navigation Click Tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     it('navigates to the Jira project page when clicking project name', async () => {
       render(<App />);
       await waitFor(() => screen.getByText('Alpha'));
@@ -329,9 +348,9 @@ describe('App', () => {
     });
   });
 
-  // ──────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // DEPENDENCIES TAB TESTS
-  // ──────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   describe('Dependencies tab', () => {
     const projectsMock = [
       { id: 1, key: 'PROJ1', name: 'Alpha', lead: 'John', avatarUrl: null },
@@ -382,7 +401,7 @@ describe('App', () => {
       // should still be present).
       expect(screen.getByTestId('dependency-graph-canvas')).toBeInTheDocument();
       expect(screen.getByTestId('dependency-graph-canvas')).toHaveAttribute('role', 'img');
-      // The card list underneath should still be there too — the graph is
+      // The card list underneath should still be there too ”” the graph is
       // additive, not a replacement for the accessible view.
       expect(screen.getByText(/Story A/)).toBeInTheDocument();
     });
@@ -430,7 +449,7 @@ describe('App', () => {
       }, { timeout: 3500 });
     });
 
-    // ── NEW: Link Type Filter Tests ────────────────────────────────────
+    // â”€â”€ NEW: Link Type Filter Tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     it('populates link type filter dropdown with unique types', async () => {
       render(<App />);
       await waitFor(() => screen.getByText('Alpha'));
@@ -470,7 +489,7 @@ describe('App', () => {
       }, { timeout: 3000 });
     });
 
-    // ── NEW: Search / Status / Only-Linked Filter Tests ────────────────
+    // â”€â”€ NEW: Search / Status / Only-Linked Filter Tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     it('filters dependencies by search text (issue key or title)', async () => {
       const deps = [
         { id: 'T1', title: 'Fix login bug', project: 'PROJ1', type: 'bug', statusCategory: 'new', statusName: 'To Do', links: [] },
@@ -549,7 +568,7 @@ describe('App', () => {
       fireEvent.click(screen.getByRole('tab', { name: /Dependencies/i }));
       await waitFor(() => screen.getByText(/Issue 1\b/));
 
-      // The graph canvas should still mount for all 15 issues — pagination
+      // The graph canvas should still mount for all 15 issues ”” pagination
       // only applies to the card list below it.
       expect(screen.getByTestId('dependency-graph-canvas')).toBeInTheDocument();
 
@@ -567,9 +586,9 @@ describe('App', () => {
     });
   });
 
-  // ──────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // ROADMAP TAB TESTS
-  // ──────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   describe('Roadmap tab', () => {
     const projectsMock = [{ id: 1, key: 'PROJ1', name: 'Alpha', lead: 'John', avatarUrl: null }];
     const epicsMock = [
@@ -616,7 +635,7 @@ describe('App', () => {
       }, { timeout: 3500 });
     });
 
-    // ── NEW: Overlapping Epic Detection Tests ──────────────────────────
+    // â”€â”€ NEW: Overlapping Epic Detection Tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     it('highlights overlapping epics with visual indicator', async () => {
       const overlappingEpics = [
         { id: 'E1', title: 'Epic 1', project: 'PROJ1', statusCategory: 'indeterminate', startDate: '2025-01-01', dueDate: '2025-03-01', assignee: 'Alice' },
@@ -671,7 +690,7 @@ describe('App', () => {
         expect(screen.queryByText('Checkout revamp')).not.toBeInTheDocument();
       });
 
-      // The filtered-out epic is still part of the overlap calculation —
+      // The filtered-out epic is still part of the overlap calculation ””
       // Login redesign should still show as overlapping even though the
       // epic it overlaps with is currently hidden by the search filter.
       const epic1 = screen.getByText('Login redesign').closest('.timeline-item');
@@ -823,7 +842,6 @@ describe('App', () => {
     });
 
     it('generates and saves a PDF when Export as PDF is clicked', async () => {
-      const { jsPDF } = require('jspdf');
 
       render(<App />);
       await waitFor(() => screen.getByText('Alpha'));
@@ -853,7 +871,7 @@ describe('App', () => {
         getProjects: projectsMock,
         getCurrentUser: { accountId: 'acc-lead' },
         getBpmnDiagrams: [],
-        // acc-lead has edit permission on PROJ1 only — mirrors the old
+        // acc-lead has edit permission on PROJ1 only ”” mirrors the old
         // "acc-lead leads PROJ1" fixture, but through the real
         // canEditProject(projectKey) resolver contract instead of a
         // hardcoded leadAccountId comparison.
@@ -955,9 +973,9 @@ describe('App', () => {
     });
   });
 
-  // ──────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // ERROR HANDLING & RETRY TESTS
-  // ──────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   it('clears error when switching tabs', async () => {
     mockInvoke({ getProjects: () => { throw new Error('fail'); } });
     render(<App />);
@@ -1000,9 +1018,9 @@ describe('App', () => {
     }, { timeout: 3000 });
   });
 
-  // ──────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // ADVANCED FEATURES TESTS
-  // ──────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   describe('Advanced Features', () => {
     it('should visually highlight overlapping epics', async () => {
       mockInvoke({
@@ -1129,9 +1147,9 @@ describe('App', () => {
     });
   });
 
-  // ──────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // ADVANCED SEARCH & FILTERING TESTS
-  // ──────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   describe('Advanced Search & Filtering', () => {
     const projectsMock = [
       { id: 1, key: 'PROJ1', name: 'Alpha', lead: 'John Doe', startDate: '2024-01-01', dueDate: '2024-06-01' },
@@ -1313,7 +1331,7 @@ describe('App', () => {
       });
     });
 
-    // ── NEW: Combined Filter Tests ─────────────────────────────────────
+    // â”€â”€ NEW: Combined Filter Tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     it('should apply multiple filters simultaneously', async () => {
       render(<App />);
       await waitFor(() => screen.getByText('Alpha'));
@@ -1348,9 +1366,9 @@ describe('App', () => {
     });
   });
 
-  // ──────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // ACCESSIBILITY & RTL TESTS
-  // ──────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   describe('Accessibility & RTL', () => {
     it('should toggle RTL layout direction', async () => {
       mockInvoke({ getProjects: [{ id: 1, key: 'PROJ1', name: 'Alpha', lead: 'John' }] });
@@ -1389,9 +1407,9 @@ describe('App', () => {
     });
   });
 
-  // ──────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // CIRCULAR DEPENDENCY DETECTION TESTS
-  // ──────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   describe('Circular Dependency Detection', () => {
     it('should display warning when circular dependency detected', async () => {
       // A genuine cycle needs actual outward edges forming a loop. The old

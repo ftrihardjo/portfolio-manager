@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactGA from 'react-ga4';
 import { invoke, router } from '@forge/bridge';
 import { Network, DataSet } from 'vis-network/standalone';
@@ -13,7 +13,8 @@ import 'bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css';
 // so the import order is deterministic — the bpmn-js CSS resets
 // have to come last to win over our app-level styles).
 import './App.css';
-
+// Add at the top of App.jsx, after existing imports:
+import { realtime } from '@forge/bridge';
 const TABS = ['projects', 'dependencies', 'roadmap', 'summary', 'bpmn'];
 const TAB_LABELS = { bpmn: 'BPMN' };
 // Ships inside the component so it can't be lost to a stale CSS file.
@@ -409,6 +410,12 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showNavigator, setShowNavigator] = useState(false);
+    // ★ Realtime state
+  const [realtimeEvent, setRealtimeEvent] = useState(null);
+  const REALTIME_CHANNEL = 'bpmn-diagram-events';
+
+  // ★ Display name cache
+  const [displayNameCache, setDisplayNameCache] = useState({});
 
   // Advanced Filtering, Interactions, & Accessibility State
   const [searchQuery, setSearchQuery] = useState('');
@@ -611,22 +618,26 @@ export default function App() {
     }
   }
 
-  async function openBpmnDiagram(diagramId) {
-    setLoading(true); setError(null);
+  const openBpmnDiagram = async (id) => {
     try {
-      const diagram = await invokeWithRetry('getBpmnDiagram', { diagramId });
-      setSelectedDiagramId(diagram.id);
-      setSelectedDiagramXml(diagram.xml);
-      setBpmnDirty(false);
-      bpmnVersionRef.current = diagram.version ?? null;
+      const rec = await invoke('getBpmnDiagram', { diagramId: id });
+      setSelectedDiagramId(id);
+      setSelectedDiagramXml(rec.xml);
+      upsertDiagramMeta(rec);
       setBpmnConflict(null);
-      const vs = normalizeVersions(diagram);
-      setVersions(vs);
-      setViewingVersion(diagram.version ?? (vs.length ? vs[vs.length - 1].version : null));
+      setBpmnDirty(false);
+      setViewingVersion(rec.version);
       setVersionName('');
-    } catch (e) { setError('Failed to open diagram: ' + e.message); }
-    finally { setLoading(false); }
-  }
+      setVersions(normalizeVersions(rec));
+
+      // ★ Resolve display names for all version authors
+      const authorIds = (rec.versions || []).map((v) => v.savedBy).filter(Boolean);
+      if (rec.lastEditedBy) authorIds.push(rec.lastEditedBy);
+      await resolveDisplayNames(authorIds);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
 
   // Load a saved version into the editor ("work on this version"). History is
   // append-only: editing + saving a past version creates a NEW named version on
@@ -653,35 +664,43 @@ export default function App() {
     setBpmnConflict(null);           // +
   }
 
-  async function saveBpmnDiagram(xml) {
-    const vname = (versionName || '').trim();
-    if (!vname) { setError('Enter a version name before saving.'); return; }
+  const saveBpmnDiagram = async (xml) => {
     try {
-      const diagram = await invokeWithRetry('saveBpmnDiagram', {
+      const payload = {
         diagramId: selectedDiagramId,
-        name: selectedDiagramId
-          ? bpmnDiagrams.find((d) => d.id === selectedDiagramId)?.name
-          : newDiagramName,
-        projectKey: selectedDiagramId
-          ? bpmnDiagrams.find((d) => d.id === selectedDiagramId)?.projectKey
-          : newDiagramProjectKey,
+        name: selectedDiagramId ? (openDiagramMeta?.name || '') : newDiagramName.trim(),
+        projectKey: selectedDiagramId ? openDiagramMeta?.projectKey : newDiagramProjectKey,
         xml,
-        versionName: vname,
-        baseVersion: bpmnVersionRef.current,
-      });
-      setSelectedDiagramId(diagram.id);
-      bpmnVersionRef.current = diagram.version ?? null;
-      setBpmnConflict(null);
-      const vs = normalizeVersions(diagram);
-      setVersions(vs);
-      setViewingVersion(diagram.version ?? null);
+        baseVersion: viewingVersion ?? openDiagramMeta?.version ?? null,
+        versionName: versionName.trim(),
+      };
+      const rec = await invoke('saveBpmnDiagram', payload);
+      setSelectedDiagramId(rec.id);
+      upsertDiagramMeta(rec);
+      setViewingVersion(rec.version);
       setVersionName('');
-      setSrAnnouncement(`Saved diagram ${diagram.name} as “${vname}”`);
-      await loadBpmnDiagrams();
+      setVersions(normalizeVersions(rec));
+      setBpmnConflict(null);
+      setSrAnnouncement(`Saved ${rec.latestVersionName || `v${rec.version}`}`);
+
+      // Refresh library
+      const diagrams = await invoke('getBpmnDiagrams');
+      setBpmnDiagrams(diagrams);
+
+      // ★ Resolve the editor's display name
+      if (rec.lastEditedBy) {
+        await resolveDisplayNames([rec.lastEditedBy]);
+      }
     } catch (e) {
-      setError('Failed to save diagram: ' + e.message);
+      if (e.message && e.message.startsWith('Conflict:')) {
+        setBpmnConflict({
+          lastEditedBy: e.message.match(/saved by (.+?) at/)?.[1] || 'another user',
+          updatedAt: e.message.match(/at (.+?)\./)?.[1] || new Date().toISOString(),
+        });
+      }
+      setError(e.message);
     }
-  }
+  };
 
   async function deleteBpmnDiagram(diagramId) {
     try {
@@ -1076,6 +1095,20 @@ export default function App() {
     () => (selectedDiagramId ? bpmnDiagrams.find((d) => d.id === selectedDiagramId) : null),
     [selectedDiagramId, bpmnDiagrams]
   );
+  // openDiagramMeta above is derived from bpmnDiagrams, not its own state —
+  // there is no setOpenDiagramMeta setter. To reflect a freshly-fetched or
+  // freshly-saved record immediately (without waiting on the next full
+  // getBpmnDiagrams refresh), upsert it into bpmnDiagrams so the memo picks
+  // it up on the next render.
+  function upsertDiagramMeta(rec) {
+    setBpmnDiagrams((prev) => {
+      const idx = prev.findIndex((d) => d.id === rec.id);
+      if (idx === -1) return [...prev, rec];
+      const next = prev.slice();
+      next[idx] = { ...next[idx], ...rec };
+      return next;
+    });
+  }
   // A new diagram may only be saved with a non-empty name that doesn't
   // duplicate an existing diagram's name (case-insensitive).
   const newDiagramNameTrimmed = newDiagramName.trim();
@@ -1120,6 +1153,84 @@ export default function App() {
     const interval = setInterval(tick, 4000); // was 8000 — closer to real-time; raise if invocation volume is a concern
     return () => clearInterval(interval);
   }, [activeTab, selectedDiagramId, canEditDiagram]);
+    // ★ Subscribe to Forge Realtime for diagram save/delete events
+  useEffect(() => {
+    let subscription = null;
+    let mounted = true;
+
+    const setupRealtime = async () => {
+      try {
+        subscription = await realtime.subscribe(REALTIME_CHANNEL, (event) => {
+          if (!mounted) return;
+          const data = typeof event === 'string' ? JSON.parse(event) : event;
+
+          if (data.type === 'diagram:saved') {
+            // Ignore our own saves (we already have the latest)
+            if (data.savedBy === currentUserAccountId) return;
+
+            setRealtimeEvent(data);
+
+            // If viewing this diagram and NOT dirty → auto-reload
+            if (data.diagramId === selectedDiagramId && !bpmnDirty) {
+              openBpmnDiagram(data.diagramId);
+            }
+            // If viewing this diagram and IS dirty → show conflict banner
+            if (data.diagramId === selectedDiagramId && bpmnDirty) {
+              setBpmnConflict({
+                lastEditedBy: data.savedByDisplay || data.savedBy,
+                updatedAt: data.savedAt,
+                version: data.version,
+              });
+            }
+
+            // Refresh the diagram list
+            invoke('getBpmnDiagrams').then(setBpmnDiagrams).catch(() => {});
+
+            // Auto-clear the banner after 8 seconds
+            setTimeout(() => setRealtimeEvent(null), 8000);
+          }
+
+          if (data.type === 'diagram:deleted') {
+            if (data.diagramId === selectedDiagramId) {
+              setSelectedDiagramId(null);
+              setSelectedDiagramXml(null);
+              setError('This diagram was deleted by another user.');
+            }
+            invoke('getBpmnDiagrams').then(setBpmnDiagrams).catch(() => {});
+          }
+
+          if (data.type === 'rules:saved') {
+            // Could show a toast; for now just log
+            console.log('Rules updated by', data.savedBy);
+          }
+        });
+      } catch (e) {
+        console.error('Realtime subscription failed:', e);
+      }
+    };
+
+    setupRealtime();
+
+    return () => {
+      mounted = false;
+      if (subscription && typeof subscription.unsubscribe === 'function') {
+        subscription.unsubscribe();
+      }
+    };
+  }, [currentUserAccountId, selectedDiagramId, bpmnDirty]);
+    // ★ Resolve account IDs to display names (batch)
+  const resolveDisplayNames = useCallback(async (accountIds) => {
+    const unique = [...new Set(accountIds.filter(Boolean))];
+    const missing = unique.filter((id) => !displayNameCache[id]);
+    if (missing.length === 0) return displayNameCache;
+    try {
+      const result = await invoke('getUsersDisplayNames', { accountIds: missing });
+      setDisplayNameCache((prev) => ({ ...prev, ...result }));
+      return { ...displayNameCache, ...result };
+    } catch {
+      return displayNameCache;
+    }
+  }, [displayNameCache]);
   // Filter the left-hand diagram library by name.
   const filteredBpmnDiagrams = useMemo(() => {
     const q = diagramSearch.trim().toLowerCase();
@@ -2103,15 +2214,26 @@ export default function App() {
                           modelVersion={viewingVersion ?? openDiagramMeta?.version}
                           modelVersionName={versions.find((v) => v.version === viewingVersion)?.name}
                           modelLastEditedBy={openDiagramMeta?.lastEditedBy}
+                          modelLastEditedByDisplay={
+                            displayNameCache[openDiagramMeta?.lastEditedBy] ||
+                            openDiagramMeta?.lastEditedByDisplay ||
+                            openDiagramMeta?.lastEditedBy
+                          }
                           modelLastEditedAt={openDiagramMeta?.updatedAt}
                           currentAccountId={currentUserAccountId}
                           showNavigator={showNavigator}
                           onToggleNavigator={() => setShowNavigator((v) => !v)}
-                          versions={versions}
+                          versions={versions.map((v) => ({
+                            ...v,
+                            savedByDisplay: displayNameCache[v.savedBy] || v.savedByDisplay || v.savedBy,
+                          }))}
                           viewingVersion={viewingVersion}
                           onSelectVersion={loadBpmnVersion}
                           versionName={versionName}
                           onVersionNameChange={setVersionName}
+                          diagramId={selectedDiagramId}
+                          projectKey={openDiagramMeta?.projectKey || newDiagramProjectKey}
+                          realtimeEvent={realtimeEvent}
                         />
                       </ErrorBoundary>
                     </>

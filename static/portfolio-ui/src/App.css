@@ -1,271 +1,15 @@
 /* ============================================================
-   BPMN & Portfolio Manager — Atlassian / Confluence design skin
-   Inspired by viadee "BPMN Modeler for Confluence".
-   Tokens follow the Atlassian Design System so the Forge app
-   feels native inside Jira/Confluence.
-   ============================================================ */
-:root {
-  /* Brand / interaction */
-  --ads-blue:        #0052CC;
-  --ads-blue-hover:  #0065FF;
-  --ads-blue-press:  #0747A6;
-  --ads-blue-subtle: #DEEBFF;
-  --ads-blue-faint:  #E9F2FF;
-
-  /* Text */
-  --ads-text:        #172B4D;
-  --ads-text-sub:    #42526E;
-  --ads-text-muted:  #6B778C;
-  --ads-text-faint:  #97A0AF;
-
-  /* Surfaces & borders */
-  --ads-page:        #F4F5F7;
-  --ads-surface:     #FFFFFF;
-  --ads-surface-2:   #FAFBFC;
-  --ads-border:      #DFE1E6;
-  --ads-border-str:  #C1C7D0;
-  --ads-neutral:     rgba(9, 30, 66, 0.06);
-  --ads-neutral-h:   rgba(9, 30, 66, 0.12);
-
-  /* Status */
-  --ads-success:     #00875A;  --ads-success-bg: #E3FCEF;
-  --ads-warning:     #FF991F;  --ads-warning-bg: #FFFAE6;
-  --ads-danger:      #DE350B;  --ads-danger-bg:  #FFEBE6;
-
-  /* Shape */
-  --r-sm: 3px; --r-md: 6px; --r-lg: 10px;
-  --shadow-1: 0 1px 2px rgba(9,30,66,.10);
-  --shadow-2: 0 0 0 1px rgba(9,30,66,.08), 0 2px 6px rgba(9,30,66,.10);
-  --shadow-3: 0 8px 24px rgba(9,30,66,.14);
-
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-          "Noto Sans", Ubuntu, "Helvetica Neue", Arial, sans-serif;
-}
-
-* { box-sizing: border-box; }
-
-html, body, #root { height: 100%; }
-
-body {
-  margin: 0;
-  background: var(--ads-page);
-  color: var(--ads-text);
-  font-family: var(--font);
-  font-size: 14px;
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-}
-
-/* ---------- App shell ---------- */
-.app {
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: var(--ads-page);
-}
-
-.sr-only {
-  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
-}
-
-.app-header {
-  position: sticky; top: 0; z-index: 30;
-  background: var(--ads-surface);
-  border-bottom: 1px solid var(--ads-border);
-  box-shadow: var(--shadow-1);
-  padding: 0 24px;
-}
-.app-header h1 {
-  display: flex; align-items: center; gap: 12px;
-  margin: 0; padding: 16px 0 0;
-  font-size: 20px; font-weight: 600; letter-spacing: -0.01em;
-  color: var(--ads-text);
-}
-/* Warm gradient glyph — a nod to viadee's "V" mark */
-.app-header h1::before {
-  content: "";
-  width: 28px; height: 28px; border-radius: 7px;
-  background: linear-gradient(135deg, #FF5630 0%, #FF991F 60%, #FFC400 100%);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.25), var(--shadow-1);
-  flex: 0 0 auto;
-}
-
-/* ADS-style underline tabs */
-.tabs {
-  display: flex; gap: 4px; margin-top: 10px;
-  border-bottom: 0;
-}
-.tab-button {
-  appearance: none; border: 0; background: transparent; cursor: pointer;
-  font: inherit; font-weight: 500; color: var(--ads-text-sub);
-  padding: 10px 12px; margin-bottom: -1px;
-  border-bottom: 2px solid transparent; border-radius: var(--r-sm) var(--r-sm) 0 0;
-  transition: background .12s, color .12s, border-color .12s;
-}
-.tab-button:hover { background: var(--ads-neutral); color: var(--ads-text); }
-.tab-button.active {
-  color: var(--ads-blue); border-bottom-color: var(--ads-blue);
-}
-.tab-button:focus-visible {
-  outline: 2px solid var(--ads-blue); outline-offset: -2px;
-}
-
-.app-content { padding: 24px; flex: 1; }
-.app-content section { animation: fade .18s ease; }
-@keyframes fade { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
-.app-content h2 {
-  font-size: 18px; font-weight: 600; margin: 0 0 16px; color: var(--ads-text);
-}
-
-/* ---------- Banners ---------- */
-.error-banner {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  margin: 12px 24px 0; padding: 10px 14px;
-  background: var(--ads-danger-bg); color: var(--ads-danger);
-  border: 1px solid #FFBDAD; border-radius: var(--r-md); font-size: 13px;
-}
-.error-banner.circular-warning {
-  background: var(--ads-warning-bg); color: #7A5A00; border-color: #FFE380;
-}
-
-/* ---------- Filter bars ---------- */
-.global-filters, .advanced-filters, .filter-bar {
-  background: var(--ads-surface);
-  border: 1px solid var(--ads-border);
-  border-radius: var(--r-md);
-  box-shadow: var(--shadow-1);
-}
-.global-filters { margin: 16px 24px 0; }
-.advanced-filters { margin: 12px 24px 0; }
-
-/* ---------- Form controls (ADS-ish) ---------- */
-input[type="text"], input[type="date"], select {
-  font: inherit; font-size: 13px; color: var(--ads-text);
-  background: var(--ads-surface);
-  border: 1px solid var(--ads-border-str); border-radius: var(--r-sm);
-  padding: 6px 10px; height: 32px;
-  transition: border-color .12s, box-shadow .12s;
-}
-input[type="text"]:hover, input[type="date"]:hover, select:hover { border-color: var(--ads-text-muted); }
-input[type="text"]:focus, input[type="date"]:focus, select:focus {
-  outline: none; border-color: var(--ads-blue);
-  box-shadow: 0 0 0 2px var(--ads-blue-subtle);
-}
-select { padding-right: 28px; }
-
-.checkbox-label {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 13px; color: var(--ads-text-sub); cursor: pointer; user-select: none;
-}
-.checkbox-label input { width: 16px; height: 16px; accent-color: var(--ads-blue); }
-
-/* ---------- Buttons ---------- */
-button {
-  font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
-  color: var(--ads-text); background: var(--ads-neutral);
-  border: 0; border-radius: var(--r-sm); padding: 6px 12px; height: 32px;
-  transition: background .12s, color .12s, box-shadow .12s;
-}
-button:hover { background: var(--ads-neutral-h); }
-button:active { background: rgba(9,30,66,.18); }
-button:disabled { opacity: .5; cursor: not-allowed; }
-button:focus-visible { outline: 2px solid var(--ads-blue); outline-offset: 1px; }
-
-button.btn-primary, .bpmn-tb-btn.primary {
-  background: var(--ads-blue); color: #fff;
-}
-button.btn-primary:hover, .bpmn-tb-btn.primary:hover { background: var(--ads-blue-hover); }
-button.btn-primary:active, .bpmn-tb-btn.primary:active { background: var(--ads-blue-press); }
-
-/* ---------- Tables (Projects) ---------- */
-.table-container {
-  background: var(--ads-surface);
-  border: 1px solid var(--ads-border) !important;
-  border-radius: var(--r-md); box-shadow: var(--shadow-1);
-  overflow: hidden;
-}
-.projects-table { border-collapse: separate; border-spacing: 0; width: 100%; }
-.projects-table thead th {
-  position: sticky; top: 0; z-index: 1;
-  background: var(--ads-surface-2);
-  color: var(--ads-text-sub); font-size: 12px; font-weight: 600;
-  text-transform: none; letter-spacing: .01em;
-  text-align: left; padding: 10px 14px;
-  border-bottom: 1px solid var(--ads-border);
-  white-space: nowrap;
-}
-.projects-table thead th:hover { color: var(--ads-blue); }
-.projects-table tbody td {
-  padding: 10px 14px; border-bottom: 1px solid var(--ads-border);
-  font-size: 13px; color: var(--ads-text); vertical-align: middle;
-}
-.projects-table tbody tr:hover { background: var(--ads-blue-faint); }
-.projects-table tbody tr:last-child td { border-bottom: 0; }
-
-.project-cell { display: flex; align-items: center; gap: 8px; }
-.avatar { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
-.stats-cell { text-align: center; }
-
-.blocked-flag { box-shadow: var(--shadow-1); }
-.blocked-flag:hover { filter: brightness(.97); }
-
-/* ---------- Pagination ---------- */
-.pagination { align-items: center; }
-.pagination span { color: var(--ads-text-muted); }
-
-/* ---------- Dependency cards ---------- */
-.dependency-node {
-  background: var(--ads-surface) !important;
-  box-shadow: var(--shadow-1);
-  transition: box-shadow .12s, transform .12s;
-}
-.dependency-node:hover { box-shadow: var(--shadow-2); }
-.node-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-
-.type-badge, .status-badge, .project-badge {
-  display: inline-flex; align-items: center;
-  font-size: 11px; font-weight: 600; line-height: 1;
-  padding: 3px 8px; border-radius: 999px;
-  background: var(--ads-neutral); color: var(--ads-text-sub);
-  text-transform: capitalize;
-}
-.project-badge { background: var(--ads-blue-subtle); color: var(--ads-blue); }
-.status-badge.done          { background: var(--ads-success-bg); color: var(--ads-success); }
-.status-badge.indeterminate { background: var(--ads-blue-subtle);  color: var(--ads-blue); }
-.status-badge.new           { background: var(--ads-neutral);      color: var(--ads-text-sub); }
-.dependency-arrow { color: var(--ads-blue); font-weight: 700; }
-.links-list { color: var(--ads-text-sub); }
-
-/* ---------- Roadmap timeline ---------- */
-.timeline-container {
-  background: var(--ads-surface);
-  border: 1px solid var(--ads-border); border-radius: var(--r-md);
-  box-shadow: var(--shadow-1);
-}
-.timeline-item.epic-bar {
-  box-shadow: var(--shadow-1);
-  transition: box-shadow .12s;
-}
-.timeline-item.epic-bar:hover { box-shadow: var(--shadow-2); }
-.timeline-item.epic-bar.overlapping { box-shadow: 0 0 0 1px #FFE380, var(--shadow-1); }
-.dates, .meta { color: var(--ads-text-muted); }
-
-/* ---------- Summary ---------- */
-.summary-section [data-testid="summary-stat-grid"] > div {
-  background: var(--ads-surface); border: 1px solid var(--ads-border) !important;
-  border-radius: var(--r-md); box-shadow: var(--shadow-1);
-}
-.summary-section p { color: var(--ads-text-sub); }
-
-/* ============================================================
    BPMN editor chrome — viadee-style toolbar + model header
    ============================================================ */
 .bpmn-section { }
 
-.bpmn-editor-shell { display: flex; flex-direction: column; gap: 12px; }
+.bpmn-editor-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
 
-/* Model header: name + version chip + last-edited meta */
+/* Model header */
 .bpmn-modelbar {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   background: var(--ads-surface);
@@ -312,49 +56,54 @@ button.btn-primary:active, .bpmn-tb-btn.primary:active { background: var(--ads-b
 .bpmn-tb-btn:disabled { opacity: .4; background: transparent; }
 .bpmn-tb-btn.primary { padding: 0 14px; color: #fff; }
 .bpmn-tb-spacer { flex: 1 1 auto; }
-
 .bpmn-find { display: flex; align-items: center; gap: 6px; }
 .bpmn-find input { height: 30px; min-width: 220px; }
 .bpmn-find-status { font-size: 11px; color: var(--ads-text-muted); white-space: nowrap; }
-
 .bpmn-toggle {
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 12px; color: var(--ads-text-sub); cursor: pointer; user-select: none;
   padding: 0 6px;
 }
+.bpmn-tb-version-name input {
+  height: 28px; font-size: 12px; min-width: 160px;
+}
+.bpmn-tb-label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--ads-text-sub); white-space: nowrap;
+}
 
-/* Canvas + panels */
+/* ── Canvas + panels — ENLARGED ── */
 .bpmn-canvas-col { display: flex; gap: 12px; flex-wrap: wrap; }
+
 .bpmn-canvas {
-  flex: 1 1 480px; min-width: 0;
-  height: clamp(520px, 70vh, 820px);
+  flex: 1 1 560px; min-width: 0;
+  /* ★ ENLARGED: was clamp(520px,70vh,820px) */
+  height: clamp(640px, 82vh, 1100px);
   background: var(--ads-surface);
   border: 1px solid var(--ads-border); border-radius: var(--r-md);
   box-shadow: var(--shadow-2);
-  background-image:
-    radial-gradient(rgba(9,30,66,.05) 1px, transparent 1px);
+  background-image: radial-gradient(rgba(9,30,66,.05) 1px, transparent 1px);
   background-size: 16px 16px;
 }
+
 .bpmn-panel {
+  /* ★ ENLARGED: was flex:0 0 300px; width:300px */
+  flex: 0 0 380px; width: 380px;
+  background: var(--ads-surface);
+  border: 1px solid var(--ads-border); border-radius: var(--r-md);
+  box-shadow: var(--shadow-1);
+  max-height: clamp(640px, 82vh, 1100px); overflow-y: auto;
+}
+.bpmn-panel-empty { padding: 14px; color: var(--ads-text-muted); font-size: 12px; }
+
+/* Navigator — ENLARGED */
+.bpmn-navigator {
+  /* ★ was flex:0 0 240px; width:240px */
   flex: 0 0 300px; width: 300px;
   background: var(--ads-surface);
   border: 1px solid var(--ads-border); border-radius: var(--r-md);
   box-shadow: var(--shadow-1);
-  max-height: clamp(520px, 70vh, 820px); overflow-y: auto;
-}
-.bpmn-panel-empty { padding: 14px; color: var(--ads-text-muted); font-size: 12px; }
-
-/* Linked Resources Navigator — persistent left sidebar that lists every
-   BPMN element carrying a jira:LinkedResources extension. Stays visible
-   even when the bpmn-js Properties panel shifts focus (e.g. to the
-   Process element after token-simulation is enabled) so the End Event's
-   linked resources remain one click away. */
-.bpmn-navigator {
-  flex: 0 0 240px; width: 240px;
-  background: var(--ads-surface);
-  border: 1px solid var(--ads-border); border-radius: var(--r-md);
-  box-shadow: var(--shadow-1);
-  max-height: clamp(520px, 70vh, 820px);
+  max-height: clamp(640px, 82vh, 1100px);
   display: flex; flex-direction: column;
   overflow: hidden;
 }
@@ -373,8 +122,7 @@ button.btn-primary:active, .bpmn-tb-btn.primary:active { background: var(--ads-b
   padding: 1px 8px; min-width: 22px; text-align: center;
 }
 .bpmn-nav-search {
-  margin: 8px 10px 6px;
-  height: 28px; font-size: 12px;
+  margin: 8px 10px 6px; height: 28px; font-size: 12px;
   background: var(--ads-surface-2);
   border: 1px solid var(--ads-border); border-radius: var(--r-sm);
   padding: 4px 8px; color: var(--ads-text);
@@ -417,90 +165,199 @@ button.btn-primary:active, .bpmn-tb-btn.primary:active { background: var(--ads-b
 }
 .bpmn-nav-item-type {
   font-size: 10px; font-weight: 600; color: var(--ads-text-muted);
-  text-transform: uppercase; letter-spacing: .03em;
-  flex: 0 0 auto;
+  text-transform: uppercase; letter-spacing: .03em; flex: 0 0 auto;
 }
 .bpmn-nav-item-key { margin-top: 4px; }
 .bpmn-nav-item-key-pill {
-  display: inline-block;
-  font-size: 11px; font-weight: 600; color: var(--ads-blue);
+  display: inline-block; font-size: 11px; font-weight: 600; color: var(--ads-blue);
   background: var(--ads-blue-subtle); border-radius: 999px;
   padding: 2px 8px; letter-spacing: .01em;
 }
-.bpmn-nav-item-meta {
-  margin-top: 4px; font-size: 11px; color: var(--ads-text-muted);
+.bpmn-nav-item-meta { margin-top: 4px; font-size: 11px; color: var(--ads-text-muted); }
+
+/* Tidy bpmn-js palette */
+.bpmn-canvas .djs-palette,
+.bpmn-canvas .djs-context-pad {
+  border-radius: var(--r-md); box-shadow: var(--shadow-2);
 }
 
-/* Tidy the bpmn-js palette / context-pad to match ADS corners */
-.bpmn-canvas .djs-palette,
-.bpmn-canvas .djs-context-pad { border-radius: var(--r-md); box-shadow: var(--shadow-2); }
+/* ── Realtime presence banner ── */
+.bpmn-realtime-banner {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px; font-size: 12px;
+  background: var(--ads-blue-faint); color: var(--ads-blue);
+  border: 1px solid var(--ads-blue-subtle); border-radius: var(--r-sm);
+  animation: fade .18s ease;
+}
+.bpmn-realtime-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--ads-success);
+  animation: pulse 2s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .4; }
+}
 
-@media (max-width: 1100px) {
-  .bpmn-navigator { flex: 0 0 200px; width: 200px; }
-  .bpmn-panel { flex: 0 0 260px; width: 260px; }
+/* ── Version history with editor names ── */
+.bpmn-version-entry {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border-bottom: 1px solid var(--ads-border);
+  font-size: 12px;
+}
+.bpmn-version-entry:last-child { border-bottom: 0; }
+.bpmn-version-avatar {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--ads-blue-subtle); color: var(--ads-blue);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; flex: 0 0 auto;
+}
+
+/* ============================================================
+   Automation Rule Builder — JSU-inspired
+   ============================================================ */
+.automation-builder {
+  background: var(--ads-surface);
+  border: 1px solid var(--ads-border); border-radius: var(--r-md);
+  box-shadow: var(--shadow-1);
+  padding: 16px;
+}
+.automation-builder h3 {
+  font-size: 15px; font-weight: 600; margin: 0 0 12px;
+  display: flex; align-items: center; gap: 8px;
+}
+.automation-builder h3::before {
+  content: "⚡"; font-size: 16px;
+}
+
+.rule-card {
+  border: 1px solid var(--ads-border); border-radius: var(--r-md);
+  margin-bottom: 12px; overflow: hidden;
+  transition: box-shadow .12s;
+}
+.rule-card:hover { box-shadow: var(--shadow-2); }
+.rule-card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--ads-surface-2);
+  border-bottom: 1px solid var(--ads-border);
+  cursor: pointer;
+}
+.rule-card-header h4 {
+  margin: 0; font-size: 13px; font-weight: 600;
+  display: flex; align-items: center; gap: 8px;
+}
+.rule-card-body { padding: 14px; }
+
+/* Trigger / Condition / Action blocks — JSU-style */
+.rule-block {
+  border: 1px solid var(--ads-border); border-radius: var(--r-sm);
+  padding: 10px 12px; margin-bottom: 10px;
+  background: var(--ads-surface);
+}
+.rule-block-label {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .03em; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 6px;
+}
+.rule-block-label.trigger { color: #FF5630; }
+.rule-block-label.condition { color: #FF991F; }
+.rule-block-label.action { color: #00875A; }
+
+.rule-block select,
+.rule-block input[type="text"] {
+  width: 100%; margin-bottom: 6px;
+}
+
+/* Decision table (DMN-style) */
+.decision-table-wrapper {
+  overflow-x: auto; margin: 12px 0;
+  border: 1px solid var(--ads-border); border-radius: var(--r-sm);
+}
+.decision-table {
+  width: 100%; border-collapse: collapse; font-size: 12px;
+}
+.decision-table th {
+  background: var(--ads-surface-2);
+  padding: 8px 10px; text-align: left;
+  border-bottom: 2px solid var(--ads-border-str);
+  font-weight: 600; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .02em; color: var(--ads-text-sub);
+  white-space: nowrap;
+}
+.decision-table th.input-col { border-left: 3px solid #FF991F; }
+.decision-table th.output-col { border-left: 3px solid #00875A; }
+.decision-table td {
+  padding: 6px 10px; border-bottom: 1px solid var(--ads-border);
+  vertical-align: middle;
+}
+.decision-table td input,
+.decision-table td select {
+  width: 100%; border: 1px solid transparent; background: transparent;
+  padding: 4px 6px; font-size: 12px; border-radius: var(--r-sm);
+}
+.decision-table td input:hover,
+.decision-table td select:hover {
+  border-color: var(--ads-border-str);
+}
+.decision-table td input:focus,
+.decision-table td select:focus {
+  border-color: var(--ads-blue);
+  box-shadow: 0 0 0 2px var(--ads-blue-subtle);
+  outline: none;
+}
+.decision-table tr:hover td { background: var(--ads-blue-faint); }
+.decision-table .row-num {
+  color: var(--ads-text-faint); font-weight: 600;
+  text-align: center; width: 32px;
+}
+
+/* Sub-tabs inside BPMN section */
+.bpmn-subtabs {
+  display: flex; gap: 4px; margin-bottom: 12px;
+}
+.bpmn-subtab {
+  appearance: none; border: 0; background: transparent; cursor: pointer;
+  font: inherit; font-weight: 500; font-size: 13px; color: var(--ads-text-sub);
+  padding: 8px 14px; border-bottom: 2px solid transparent;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  transition: background .12s, color .12s;
+}
+.bpmn-subtab:hover { background: var(--ads-neutral); color: var(--ads-text); }
+.bpmn-subtab.active {
+  color: var(--ads-blue); border-bottom-color: var(--ads-blue);
+}
+
+/* Responsive — ENLARGED breakpoints */
+@media (max-width: 1200px) {
+  .bpmn-navigator { flex: 0 0 260px; width: 260px; }
+  .bpmn-panel { flex: 0 0 320px; width: 320px; }
 }
 @media (max-width: 900px) {
-  .bpmn-navigator, .bpmn-panel { flex: 1 1 100%; width: 100%; max-height: 320px; }
-  .bpmn-canvas { flex: 1 1 100%; min-height: 420px; }
+  .bpmn-navigator, .bpmn-panel {
+    flex: 1 1 100%; width: 100%; max-height: 360px;
+  }
+  .bpmn-canvas { flex: 1 1 100%; min-height: 480px; }
   .app-content { padding: 16px; }
 }
-/* ============================================================
-   Linked-resources panels in the diagram-library sidebar
-   ------------------------------------------------------------
-   The navigator + the Jira/Confluence properties panel are portaled
-   from BpmnDiagramView into .bpmn-linked-panels-top at the TOP of the
-   left sidebar (above "Search diagrams…"). The global .bpmn-panel /
-   .bpmn-navigator rules give those elements a fixed 240–300px width
-   (and a row-flex basis) for the old in-canvas layout; inside the
-   narrow sidebar that overflowed the column. Here we (1) make them
-   fill the column, (2) stack them with the properties panel on top,
-   (3) add breathing room, and (4) let an open navigator REPLACE the
-   diagram library (search + New Diagram + list).
-   ============================================================ */
 
-/* Stack the portaled panels vertically; separate the whole stack from
-   the search box / library below it. */
+/* ── Linked-resources panels in sidebar (unchanged) ── */
 .bpmn-linked-panels-top {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;                 /* space between properties panel and navigator */
-  margin-bottom: 18px;       /* space before "Search diagrams…" / library */
+  display: flex; flex-direction: column; gap: 14px; margin-bottom: 18px;
 }
-
-/* The portal target stacks its (view-mode) children the same way. */
 #bpmn-linked-panels-nav-slot {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  display: flex; flex-direction: column; gap: 14px;
 }
-
-/* Nothing portaled (navigator toggled off in edit mode) → collapse the
-   empty slot so it leaves no stray gap. */
 #bpmn-linked-panels-nav-slot:empty { display: none; }
-
-/* No diagram open at all → hide the empty wrapper so the library isn't
-   pushed down by a blank box. */
 .bpmn-linked-panels-top:not(:has(> #js-properties-panel)):has(> #bpmn-linked-panels-nav-slot:empty) {
-  display: none;
-  margin-bottom: 0;
+  display: none; margin-bottom: 0;
 }
-
-/* Fit the panels to the sidebar column — overrides the fixed 240/300px
-   width AND the row-flex basis from the global rules. (max-height /
-   internal scroll from the global rules is intentionally kept.) */
 .bpmn-linked-panels-top .bpmn-panel,
 .bpmn-linked-panels-top .bpmn-navigator,
 #bpmn-linked-panels-nav-slot .bpmn-panel,
 #bpmn-linked-panels-nav-slot .bpmn-navigator {
-  flex: 0 0 auto;
-  width: 100%;
-  max-width: 100%;
+  flex: 0 0 auto; width: 100%; max-width: 100%;
 }
-
-/* Open navigator REPLACES the diagram library; toggling Navigator OFF in
-   the toolbar brings it back. Driven purely by the navigator's DOM
-   presence (it's portaled into the slot above), so no extra React state
-   has to be threaded between App.jsx and BpmnDiagramView. */
 .bpmn-diagram-library-col:has(#bpmn-linked-panels-nav-slot .bpmn-navigator) > [data-testid="bpmn-diagram-search"],
 .bpmn-diagram-library-col:has(#bpmn-linked-panels-nav-slot .bpmn-navigator) > [data-testid="new-bpmn-diagram"],
 .bpmn-diagram-library-col:has(#bpmn-linked-panels-nav-slot .bpmn-navigator) > [data-testid="bpmn-diagram-list"] {

@@ -1,26 +1,36 @@
 import Resolver from '@forge/resolver';
 import api, { route } from '@forge/api';
 import { kvs } from '@forge/kvs';
+import { publish } from '@forge/realtime';
 
 const resolver = new Resolver();
 
+// ─── Jira REST helpers ──────────────────────────────────────────────
 async function jiraGet(path, params = {}) {
   const keys = Object.keys(params);
   if (keys.length === 0) {
-    const res = await api.asUser().requestJira(route`${path}`, { headers: { Accept: 'application/json' } });
+    const res = await api.asUser().requestJira(route`${path}`, {
+      headers: { Accept: 'application/json' },
+    });
     if (!res.ok) throw new Error(`Jira ${res.status} on ${path}: ${await res.text()}`);
     return res.json();
   }
   const strings = []; const values = [];
   strings.push(`${path}?${keys[0]}=`); values.push(params[keys[0]]);
-  for (let i = 1; i < keys.length; i++) { strings.push(`&${keys[i]}=`); values.push(params[keys[i]]); }
+  for (let i = 1; i < keys.length; i++) {
+    strings.push(`&${keys[i]}=`); values.push(params[keys[i]]);
+  }
   strings.push('');
-  const res = await api.asUser().requestJira(route(strings, ...values), { headers: { Accept: 'application/json' } });
+  const res = await api.asUser().requestJira(route(strings, ...values), {
+    headers: { Accept: 'application/json' },
+  });
   if (!res.ok) throw new Error(`Jira ${res.status} on ${path}: ${await res.text()}`);
   return res.json();
 }
+
+// ✅ FIXED
 async function jiraPost(path, body) {
-  const res = await api.asUser().requestJira(route([path]), {
+  const res = await api.asUser().requestJira(path, {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -29,8 +39,59 @@ async function jiraPost(path, body) {
   return res.json();
 }
 
+// ─── User display-name resolution ───────────────────────────────────
+// Cache in kvs so we don't hammer the Jira API on every render.
+const USER_CACHE_KEY = 'user:displaynames';
+
+async function resolveDisplayName(accountId) {
+  if (!accountId) return 'Unknown';
+  // Check cache first
+  const cache = (await kvs.get(USER_CACHE_KEY)) || {};
+  if (cache[accountId]) return cache[accountId];
+  try {
+    const user = await jiraGet('/rest/api/3/user', { accountId });
+    const name = user.displayName || accountId;
+    cache[accountId] = name;
+    await kvs.set(USER_CACHE_KEY, cache);
+    return name;
+  } catch {
+    return accountId; // fallback to raw ID
+  }
+}
+
+resolver.define('getUserDisplayName', async ({ payload }) => {
+  const { accountId } = payload;
+  return { accountId, displayName: await resolveDisplayName(accountId) };
+});
+
+resolver.define('getUsersDisplayNames', async ({ payload }) => {
+  const { accountIds } = payload; // string[]
+  const cache = (await kvs.get(USER_CACHE_KEY)) || {};
+  const missing = (accountIds || []).filter((id) => id && !cache[id]);
+  // Resolve missing ones in parallel
+  await Promise.all(
+    missing.map(async (id) => {
+      try {
+        const user = await jiraGet('/rest/api/3/user', { accountId: id });
+        cache[id] = user.displayName || id;
+      } catch {
+        cache[id] = id;
+      }
+    })
+  );
+  if (missing.length) await kvs.set(USER_CACHE_KEY, cache);
+  const result = {};
+  for (const id of accountIds || []) {
+    result[id] = cache[id] || id || 'Unknown';
+  }
+  return result;
+});
+
+// ─── Projects / stats / dependencies / roadmap (unchanged) ──────────
 resolver.define('getProjects', async () => {
-  const data = await jiraGet('/rest/api/3/project/search', { maxResults: '50', orderBy: 'name', expand: 'description,lead' });
+  const data = await jiraGet('/rest/api/3/project/search', {
+    maxResults: '50', orderBy: 'name', expand: 'description,lead',
+  });
   return (data.values || []).map((p) => ({
     id: p.id, key: p.key, name: p.name,
     lead: p.lead?.displayName ?? null,
@@ -42,15 +103,16 @@ resolver.define('getProjects', async () => {
 resolver.define('getProjectStats', async ({ payload }) => {
   const { projectKey } = payload;
   const base = `project = "${projectKey}"`;
-  const [all, done, inProgress, overdueEpics, blockedData, earliestEpic, latestEpic] = await Promise.all([
-    jiraPost('/rest/api/3/search/approximate-count', { jql: base }),
-    jiraPost('/rest/api/3/search/approximate-count', { jql: `${base} AND statusCategory = Done` }),
-    jiraPost('/rest/api/3/search/approximate-count', { jql: `${base} AND statusCategory = "In Progress"` }),
-    jiraPost('/rest/api/3/search/approximate-count', { jql: `${base} AND issuetype = Epic AND duedate < now() AND statusCategory != Done` }),
-    jiraGet('/rest/api/3/search/jql', { jql: base, maxResults: '100', fields: 'status,issuelinks' }),
-    jiraGet('/rest/api/3/search/jql', { jql: `${base} AND issuetype = Epic AND cf[10015] is not EMPTY ORDER BY cf[10015] ASC`, maxResults: '1', fields: 'customfield_10015' }),
-    jiraGet('/rest/api/3/search/jql', { jql: `${base} AND issuetype = Epic AND duedate is not EMPTY ORDER BY duedate DESC`, maxResults: '1', fields: 'duedate' }),
-  ]);
+  const [all, done, inProgress, overdueEpics, blockedData, earliestEpic, latestEpic] =
+    await Promise.all([
+      jiraPost('/rest/api/3/search/approximate-count', { jql: base }),
+      jiraPost('/rest/api/3/search/approximate-count', { jql: `${base} AND statusCategory = Done` }),
+      jiraPost('/rest/api/3/search/approximate-count', { jql: `${base} AND statusCategory = "In Progress"` }),
+      jiraPost('/rest/api/3/search/approximate-count', { jql: `${base} AND issuetype = Epic AND duedate < now() AND statusCategory != Done` }),
+      jiraGet('/rest/api/3/search/jql', { jql: base, maxResults: '100', fields: 'status,issuelinks' }),
+      jiraGet('/rest/api/3/search/jql', { jql: `${base} AND issuetype = Epic AND cf[10015] is not EMPTY ORDER BY cf[10015] ASC`, maxResults: '1', fields: 'customfield_10015' }),
+      jiraGet('/rest/api/3/search/jql', { jql: `${base} AND issuetype = Epic AND duedate is not EMPTY ORDER BY duedate DESC`, maxResults: '1', fields: 'duedate' }),
+    ]);
   const total = all.count ?? 0;
   const blockedCount = (blockedData.issues || []).filter((i) =>
     (i.fields.issuelinks || []).some((l) =>
@@ -62,8 +124,8 @@ resolver.define('getProjectStats', async ({ payload }) => {
   const overdueComponent = Math.min(overdueCount, 3) / 3;
   const riskScore = Math.round(100 * (0.5 * blockedRatio + 0.5 * overdueComponent));
   return {
-    total, done: done.count ?? 0, blocked: blockedCount, inProgress: inProgress.count ?? 0,
-    overdueEpics: overdueCount, riskScore,
+    total, done: done.count ?? 0, blocked: blockedCount,
+    inProgress: inProgress.count ?? 0, overdueEpics: overdueCount, riskScore,
     startDate: earliestEpic.issues?.[0]?.fields?.customfield_10015 ?? null,
     dueDate: latestEpic.issues?.[0]?.fields?.duedate ?? null,
   };
@@ -73,14 +135,17 @@ resolver.define('getIssueDependencies', async ({ payload }) => {
   const { projectKeys } = payload;
   if (!projectKeys?.length) return [];
   const data = await jiraGet('/rest/api/3/search/jql', {
-    jql: `project in (${projectKeys.join(',')}) ORDER BY created DESC`, maxResults: '100',
+    jql: `project in (${projectKeys.join(',')}) ORDER BY created DESC`,
+    maxResults: '100',
     fields: 'summary,status,issuetype,project,issuelinks,assignee,priority',
   });
   return (data.issues || []).map((issue) => ({
     id: issue.key, title: issue.fields.summary, project: issue.fields.project.key,
     type: issue.fields.issuetype.name.toLowerCase(),
-    statusCategory: issue.fields.status.statusCategory.key, statusName: issue.fields.status.name,
-    assignee: issue.fields.assignee?.displayName ?? null, priority: issue.fields.priority?.name ?? 'Medium',
+    statusCategory: issue.fields.status.statusCategory.key,
+    statusName: issue.fields.status.name,
+    assignee: issue.fields.assignee?.displayName ?? null,
+    priority: issue.fields.priority?.name ?? 'Medium',
     links: (issue.fields.issuelinks || []).map((l) => ({
       type: l.type.name, outwardLabel: l.type.outward, inwardLabel: l.type.inward,
       inward: l.inwardIssue?.key ?? null, outward: l.outwardIssue?.key ?? null,
@@ -92,27 +157,25 @@ resolver.define('getRoadmapEpics', async ({ payload }) => {
   const { projectKeys } = payload;
   if (!projectKeys?.length) return [];
   const data = await jiraGet('/rest/api/3/search/jql', {
-    jql: `project in (${projectKeys.join(',')}) AND issuetype = Epic ORDER BY duedate ASC`, maxResults: '100',
+    jql: `project in (${projectKeys.join(',')}) AND issuetype = Epic ORDER BY duedate ASC`,
+    maxResults: '100',
     fields: 'summary,status,project,duedate,customfield_10015,assignee',
   });
   return (data.issues || []).map((issue) => ({
     id: issue.key, title: issue.fields.summary, project: issue.fields.project.key,
     statusCategory: issue.fields.status.statusCategory.key,
-    startDate: issue.fields.customfield_10015 ?? null, dueDate: issue.fields.duedate ?? null,
+    startDate: issue.fields.customfield_10015 ?? null,
+    dueDate: issue.fields.duedate ?? null,
     assignee: issue.fields.assignee?.displayName ?? null,
   }));
 });
 
-// ─── BPMN library + collaborative editing (poll + optimistic lock) ─────────
+// ─── BPMN library + Realtime collaborative editing ──────────────────
 const BPMN_INDEX_KEY = 'bpmn:index';
 const bpmnDiagramKey = (id) => `bpmn:diagram:${id}`;
 const bpmnVersionKey = (id, v) => `bpmn:diagram:${id}:v${v}`;
+const REALTIME_CHANNEL = 'bpmn-diagram-events';
 
-// Real permission check: anyone who can edit issues in the project can edit
-// its diagrams — not just the project lead. Replaces the old
-// getProjectLeadAccountId() gate, which locked every diagram to a single
-// person and caused the "editor sees v2 / viewer sees view-only, forever"
-// split, since only the lead's poll loop was ever allowed to run.
 async function canEditProject(projectKey, accountId) {
   if (!accountId) return false;
   const res = await api.asUser().requestJira(
@@ -124,24 +187,22 @@ async function canEditProject(projectKey, accountId) {
   return !!perms.permissions?.EDIT_ISSUES?.havePermission;
 }
 
-resolver.define('getCurrentUser', async ({ context }) => ({ accountId: context?.accountId ?? null }));
-// Client-side mirror source of truth: App.jsx calls this to decide whether
-// to render the Modeler or the read-only Viewer. The save/delete resolvers
-// below re-check independently — this endpoint is never the security
-// boundary by itself, but it does need to reflect the *real* rule so the UI
-// and the enforcement never disagree.
+resolver.define('getCurrentUser', async ({ context }) => ({
+  accountId: context?.accountId ?? null,
+}));
+
 resolver.define('canEditProject', async ({ payload, context }) => {
   const { projectKey } = payload;
   const accountId = context?.accountId ?? null;
   if (!projectKey) return { canEdit: false };
   return { canEdit: await canEditProject(projectKey, accountId) };
 });
+
 resolver.define('getBpmnDiagrams', async () => (await kvs.get(BPMN_INDEX_KEY)) || []);
+
 resolver.define('getBpmnDiagram', async ({ payload }) => {
   const diagram = await kvs.get(bpmnDiagramKey(payload.diagramId));
   if (!diagram) throw new Error(`Diagram ${payload.diagramId} not found`);
-  // Read-only back-compat: legacy records have no `versions` array, so
-  // synthesise one from the head so the version switcher still works.
   if (!Array.isArray(diagram.versions) && typeof diagram.version === 'number') {
     diagram.versions = [{
       version: diagram.version,
@@ -150,15 +211,24 @@ resolver.define('getBpmnDiagram', async ({ payload }) => {
       savedBy: diagram.lastEditedBy,
     }];
   }
+  // ★ Resolve display names for all version authors
+  if (Array.isArray(diagram.versions)) {
+    const cache = (await kvs.get(USER_CACHE_KEY)) || {};
+    for (const v of diagram.versions) {
+      v.savedByDisplay = cache[v.savedBy] || v.savedBy || 'Unknown';
+    }
+    diagram.lastEditedByDisplay = cache[diagram.lastEditedBy] || diagram.lastEditedBy || 'Unknown';
+  }
   return diagram;
 });
-// Serve one named version's XML + meta without loading the whole history.
-// Falls back to the record's head XML for legacy versions whose per-version
-// key was never written.
+
 resolver.define('getBpmnDiagramVersion', async ({ payload }) => {
   const { diagramId, version } = payload;
   const stored = await kvs.get(bpmnVersionKey(diagramId, version));
-  if (stored) return stored;
+  if (stored) {
+    stored.savedByDisplay = await resolveDisplayName(stored.savedBy);
+    return stored;
+  }
   const diagram = await kvs.get(bpmnDiagramKey(diagramId));
   if (!diagram) throw new Error(`Diagram ${diagramId} not found`);
   if (diagram.version === version) {
@@ -167,6 +237,7 @@ resolver.define('getBpmnDiagramVersion', async ({ payload }) => {
       name: diagram.latestVersionName || `v${version}`,
       savedAt: diagram.updatedAt,
       savedBy: diagram.lastEditedBy,
+      savedByDisplay: await resolveDisplayName(diagram.lastEditedBy),
       xml: diagram.xml,
     };
   }
@@ -184,18 +255,22 @@ resolver.define('saveBpmnDiagram', async ({ payload, context }) => {
   const existing = diagramId ? await kvs.get(bpmnDiagramKey(id)) : null;
 
   if (existing && typeof baseVersion === 'number' && baseVersion !== existing.version) {
+    // ★ Resolve the conflicting editor's display name for a friendly message
+    const editorName = await resolveDisplayName(existing.lastEditedBy);
     throw new Error(
-      `Conflict: this diagram was saved by ${existing.lastEditedBy || 'another user'} at ${existing.updatedAt}. Reload before saving.`
+      `Conflict: this diagram was saved by ${editorName} at ${existing.updatedAt}. Reload before saving.`
     );
   }
 
   const version = (existing?.version || 0) + 1;
-  // The user names every version. v<n> is only a fallback for old clients.
-  const vName = (typeof versionName === 'string' && versionName.trim()) ? versionName.trim() : `v${version}`;
-  const versionEntry = { version, name: vName, savedAt: now, savedBy: accountId };
+  const vName = (typeof versionName === 'string' && versionName.trim())
+    ? versionName.trim() : `v${version}`;
+  const editorDisplay = await resolveDisplayName(accountId);
+  const versionEntry = {
+    version, name: vName, savedAt: now,
+    savedBy: accountId, savedByDisplay: editorDisplay,
+  };
 
-  // Append-only history. Migrate a legacy record (no `versions`) by seeding it
-  // from the head, and back-fill its version key so it stays servable.
   let versions = Array.isArray(existing?.versions) ? existing.versions.slice() : [];
   if (!versions.length && existing && typeof existing.version === 'number') {
     const legacy = {
@@ -203,28 +278,47 @@ resolver.define('saveBpmnDiagram', async ({ payload, context }) => {
       name: existing.latestVersionName || `v${existing.version}`,
       savedAt: existing.updatedAt,
       savedBy: existing.lastEditedBy,
+      savedByDisplay: await resolveDisplayName(existing.lastEditedBy),
     };
     versions.push(legacy);
     await kvs.set(bpmnVersionKey(id, existing.version), { ...legacy, xml: existing.xml });
   }
   versions.push(versionEntry);
-
-  // Each version's XML lives in its own key (small values; serve any version
-  // without loading the whole history).
   await kvs.set(bpmnVersionKey(id, version), { ...versionEntry, xml });
 
   const record = {
     id, name, projectKey, xml,
     createdAt: existing?.createdAt ?? now, updatedAt: now,
-    version, lastEditedBy: accountId,
+    version, lastEditedBy: accountId, lastEditedByDisplay: editorDisplay,
     versions, latestVersionName: vName,
   };
   await kvs.set(bpmnDiagramKey(id), record);
 
   const index = (await kvs.get(BPMN_INDEX_KEY)) || [];
-  const meta = { id, name, projectKey, updatedAt: now, lastEditedBy: accountId, version, latestVersionName: vName };
+  const meta = {
+    id, name, projectKey, updatedAt: now,
+    lastEditedBy: accountId, lastEditedByDisplay: editorDisplay,
+    version, latestVersionName: vName,
+  };
   const nextIndex = diagramId ? index.map((d) => (d.id === id ? meta : d)) : [...index, meta];
   await kvs.set(BPMN_INDEX_KEY, nextIndex);
+
+  // ★ REALTIME: Broadcast the save to all connected clients
+  try {
+    await publish(REALTIME_CHANNEL, {
+      type: 'diagram:saved',
+      diagramId: id,
+      version,
+      versionName: vName,
+      savedAt: now,
+      savedBy: accountId,
+      savedByDisplay: editorDisplay,
+      projectKey,
+    });
+  } catch (e) {
+    console.error('Realtime publish failed (non-fatal):', e);
+  }
+
   return record;
 });
 
@@ -239,12 +333,22 @@ resolver.define('deleteBpmnDiagram', async ({ payload, context }) => {
   await kvs.delete(bpmnDiagramKey(diagramId));
   const index = (await kvs.get(BPMN_INDEX_KEY)) || [];
   await kvs.set(BPMN_INDEX_KEY, index.filter((d) => d.id !== diagramId));
+
+  // ★ REALTIME: Broadcast deletion
+  try {
+    await publish(REALTIME_CHANNEL, {
+      type: 'diagram:deleted',
+      diagramId,
+      deletedBy: accountId,
+    });
+  } catch (e) {
+    console.error('Realtime publish failed (non-fatal):', e);
+  }
+
   return { deleted: true };
 });
 
-// Optional presence/locking (kvs-only, valid). The UI can call lockDiagram
-// when a lead opens the editor to show "X is editing"; not required for the
-// poll+conflict flow above.
+// Lock / unlock (kept for presence indicators)
 resolver.define('lockDiagram', async ({ payload, context }) => {
   const { diagramId } = payload;
   const accountId = context?.accountId;
@@ -252,16 +356,54 @@ resolver.define('lockDiagram', async ({ payload, context }) => {
   const existing = await kvs.get(lockKey);
   if (existing && existing.accountId !== accountId) {
     const age = Date.now() - new Date(existing.lockedAt).getTime();
-    if (age < 5 * 60 * 1000) return { locked: true, lockedBy: existing.accountId };
+    if (age < 5 * 60 * 1000) {
+      return {
+        locked: true,
+        lockedBy: existing.accountId,
+        lockedByDisplay: await resolveDisplayName(existing.accountId),
+      };
+    }
   }
   await kvs.set(lockKey, { diagramId, accountId, lockedAt: new Date().toISOString() });
   return { locked: false };
 });
+
 resolver.define('unlockDiagram', async ({ payload, context }) => {
   const lockKey = `bpmn:lock:${payload.diagramId}`;
   const existing = await kvs.get(lockKey);
   if (existing?.accountId === context?.accountId) await kvs.delete(lockKey);
   return { unlocked: true };
+});
+
+// ─── Automation Rules storage ───────────────────────────────────────
+const automationRulesKey = (diagramId) => `automation:rules:${diagramId}`;
+
+resolver.define('getAutomationRules', async ({ payload }) => {
+  const { diagramId } = payload;
+  return (await kvs.get(automationRulesKey(diagramId))) || [];
+});
+
+resolver.define('saveAutomationRules', async ({ payload, context }) => {
+  const { diagramId, projectKey, rules } = payload;
+  const accountId = context?.accountId ?? null;
+  if (!(await canEditProject(projectKey, accountId))) {
+    throw new Error('You need edit permission on this project to save automation rules.');
+  }
+  await kvs.set(automationRulesKey(diagramId), rules);
+
+  try {
+    await publish(REALTIME_CHANNEL, {
+      type: 'rules:saved',
+      diagramId,
+      savedBy: accountId,
+      savedAt: new Date().toISOString(),
+      ruleCount: rules.length,
+    });
+  } catch (e) {
+    console.error('Realtime publish failed (non-fatal):', e);
+  }
+
+  return { saved: true, count: rules.length };
 });
 
 export const handler = resolver.getDefinitions();

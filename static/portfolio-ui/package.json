@@ -1,6 +1,6 @@
 {
   "name": "jira-global-page-custom-ui-static",
-  "version": "0.1.71",
+  "version": "0.2.0",
   "private": true,
   "homepage": ".",
   "dependencies": {
@@ -11,12 +11,14 @@
     "bpmn-js": "^18.21.0",
     "bpmn-js-properties-panel": "^5.61.0",
     "bpmn-js-token-simulation": "^0.40.0",
+    "dmn-js": "^17.2.0",
+    "dmn-js-properties-panel": "^3.5.0",
     "jspdf": "^4.2.1",
     "preact": "^10.22.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
     "react-ga4": "^3.0.1",
-    "react-router-dom": "^7.15.1",
+    "react-router-dom": "7.18.2",
     "vis-network": "^10.1.0"
   },
   "devDependencies": {
@@ -27,13 +29,16 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
+    "@vitejs/plugin-react": "^6.0.5",
+    "@vitest/ui": "^4.1.10",
     "axe-core": "^4.11.4",
     "cypress": "^15.15.0",
     "cypress-axe": "^1.7.0",
     "date-fns": "^4.1.0",
     "identity-obj-proxy": "^3.0.0",
-    "jest": "^27.5.1",
-    "react-scripts": "^5.0.1"
+    "jsdom": "^29.1.1",
+    "vite": "^8.2.0",
+    "vitest": "^4.1.10"
   },
   "overrides": {
     "tmp": "^0.2.6",
@@ -45,13 +50,14 @@
     "@tootallnate/once": "^2.0.1",
     "qs": "^6.15.2",
     "linkify-it": "^5.0.2",
-    "svgo": "^3.3.2"
+    "svgo": "^3.3.2",
+    "react-router": "8.3.0"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "eject": "react-scripts eject",
-    "test": "jest"
+    "start": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest"
   },
   "browserslist": {
     "production": [
@@ -73,7 +79,7 @@
     "transform": {
       "^.+\\.(js|jsx)$": "babel-jest"
     },
-    "setupFilesAfterEnv": [
+    "setupFilesAfterSetup": [
       "@testing-library/jest-dom"
     ]
   }
