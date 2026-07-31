@@ -4,6 +4,7 @@ app:
     name: nodejs22.x
   licensing:
     enabled: true
+
 modules:
   jira:globalPage:
     - key: portfolio-page
@@ -12,14 +13,15 @@ modules:
         function: resolver
       title: BPMN, Workflow Automation & Portfolio Manager
       layout: basic
-function:
-  - key: resolver
-    handler: index.handler
+
+  function:
+    - key: resolver
+      handler: index.handler
+
 resources:
   - key: portfolio-ui
     path: static/portfolio-ui/build
-tunnel:
-  port: 3000
+
 permissions:
   scopes:
     - read:jira-work
@@ -29,4 +31,4 @@ permissions:
   external:
     fetch:
       backend:
-        - "*.atlassian.net"
+        - address: "*.atlassian.net"
