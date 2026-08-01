@@ -164,8 +164,8 @@ export default function BpmnDiagramView({
   currentAccountId,
   showNavigator: showNavigatorProp, onToggleNavigator,
   versions, viewingVersion, onSelectVersion, versionName, onVersionNameChange,
-  // ★ New props
   diagramId, projectKey, realtimeEvent,
+  onOpenVersionList,   // ★ NEW — closes the modal and shows the version list
 }) {
   const canvasRef = useRef(null);
   const instanceRef = useRef(null);
@@ -369,75 +369,62 @@ export default function BpmnDiagramView({
 
       {subTab === 'diagram' && (
         <>
-          {/* Toolbar */}
-          <div className="bpmn-toolbar">
+          {/* Toolbar — one tidy row: grouped icon buttons + separators */}
+          <div className="bpmn-toolbar" role="toolbar" aria-label="Diagram tools">
             {canEdit && (
-              <>
-                <div className="bpmn-tb-group">
-                  <button className="bpmn-tb-btn primary" onClick={handleSave} disabled={saveDisabled} data-testid="save-bpmn" title="Save diagram">Save</button>
-                  <div className="bpmn-tb-group bpmn-tb-version-name">
-                    <label className="bpmn-tb-label" htmlFor="bpmn-version-name" title="You name every version you save">
-                      Save as
-                      <input
-                        id="bpmn-version-name" type="text" data-testid="bpmn-version-name"
-                        placeholder="version name (e.g. release-1.0)"
-                        value={versionName || ''}
-                        onChange={(e) => onVersionNameChange && onVersionNameChange(e.target.value)}
-                      />
-                    </label>
-                  </div>
-                </div>
-                <div className="bpmn-tb-group">
-                  <button className="bpmn-tb-btn" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)">↶ Undo</button>
-                  <button className="bpmn-tb-btn" onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)">↷ Redo</button>
-                </div>
-                <div className="bpmn-tb-group">
-                  <label className="bpmn-toggle" title="Animate tokens through the process">
-                    <input type="checkbox" data-testid="toggle-token-simulation"
-                      checked={tokenSimEnabled} onChange={(e) => onToggleTokenSim(e.target.checked)} />
-                    Token simulation
-                  </label>
-                </div>
-              </>
+              <div className="bpmn-tb-group">
+                <button className="bpmn-tb-btn primary" onClick={handleSave} disabled={saveDisabled}
+                  data-testid="save-bpmn" title="Save diagram">💾 Save</button>
+                <label className="bpmn-tb-label bpmn-tb-version-name" htmlFor="bpmn-version-name"
+                  title="Name the version you are about to save">
+                  <span className="bpmn-tb-label-text">Save as</span>
+                  <input id="bpmn-version-name" type="text" data-testid="bpmn-version-name"
+                    placeholder="version name (e.g. release-1.0)"
+                    value={versionName || ''}
+                    onChange={(e) => onVersionNameChange && onVersionNameChange(e.target.value)} />
+                </label>
+              </div>
             )}
+
+            {canEdit && (
+              <div className="bpmn-tb-group">
+                <button className="bpmn-tb-btn icon" onClick={undo} disabled={!canUndo}
+                  title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
+                <button className="bpmn-tb-btn icon" onClick={redo} disabled={!canRedo}
+                  title="Redo (Ctrl+Y)" aria-label="Redo">↷</button>
+              </div>
+            )}
+
             <div className="bpmn-tb-group">
-              {versions && versions.length > 0 && (
-                <div className="bpmn-tb-group bpmn-tb-version-switch">
-                  <label className="bpmn-tb-label" htmlFor="bpmn-version-switch" title="Open a saved version">
-                    Version
-                    <select
-                      id="bpmn-version-switch" data-testid="bpmn-version-switch"
-                      value={viewingVersion ?? ''}
-                      onChange={(e) => onSelectVersion && onSelectVersion(Number(e.target.value))}
-                    >
-                      {[...versions].reverse().map((v) => (
-                        <option key={v.version} value={v.version}>
-                          {/* ★ Show editor display name in version dropdown */}
-                          {v.name}
-                          {v.savedByDisplay ? ` · ${v.savedByDisplay}` : ''}
-                          {v.savedAt ? ` · ${formatRelative(v.savedAt)}` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
+              {canEdit && (
+                <label className="bpmn-toggle" title="Animate tokens through the process">
+                  <input type="checkbox" data-testid="toggle-token-simulation"
+                    checked={tokenSimEnabled} onChange={(e) => onToggleTokenSim(e.target.checked)} />
+                  <span>Token sim</span>
+                </label>
               )}
-              <button
-                className={`bpmn-tb-btn ${showNavigator ? 'primary' : ''}`}
-                onClick={toggleNavigator}
-                data-testid="toggle-navigator"
-                title={showNavigator ? 'Hide navigator' : 'Show navigator'}
-                aria-pressed={showNavigator}
-              >
-                {showNavigator ? '◧' : '◨'} Navigator
+              <button className="bpmn-tb-btn" onClick={() => onOpenVersionList && onOpenVersionList()}
+                data-testid="open-version-list" title="Browse and switch versions">
+                🕘 Versions{typeof viewingVersion === 'number' ? ` · v${viewingVersion}` : ''}
+              </button>
+              <button className={`bpmn-tb-btn icon ${showNavigator ? 'active' : ''}`}
+                onClick={toggleNavigator} data-testid="toggle-navigator"
+                title={showNavigator ? 'Hide navigator' : 'Show navigator'} aria-pressed={showNavigator}>
+                {showNavigator ? '◧' : '◨'}
               </button>
             </div>
+
             <div className="bpmn-tb-group">
-              <button className="bpmn-tb-btn" onClick={() => zoomBy(1 / 1.2)} title="Zoom out">−</button>
-              <button className="bpmn-tb-btn" onClick={zoomFit} title="Fit to screen" style={{ minWidth: 52 }}>{zoomPct}%</button>
-              <button className="bpmn-tb-btn" onClick={() => zoomBy(1.2)} title="Zoom in">+</button>
+              <button className="bpmn-tb-btn icon" onClick={() => zoomBy(1 / 1.2)}
+                title="Zoom out" aria-label="Zoom out">−</button>
+              <button className="bpmn-tb-btn icon" onClick={zoomFit} title="Fit to screen"
+                aria-label="Fit to screen" style={{ minWidth: 52 }}>{zoomPct}%</button>
+              <button className="bpmn-tb-btn icon" onClick={() => zoomBy(1.2)}
+                title="Zoom in" aria-label="Zoom in">+</button>
             </div>
+
             <div className="bpmn-tb-spacer" />
+
             <div className="bpmn-find">
               <input type="text" data-testid="bpmn-find-issue-key"
                 placeholder="Find by issue key (e.g. PROJ-123)"

@@ -4,6 +4,8 @@ import { invoke, router } from '@forge/bridge';
 import { Network, DataSet } from 'vis-network/standalone';
 import { jsPDF } from 'jspdf';
 import BpmnDiagramView from './bpmn/BpmnDiagramView';
+import BpmnEditorModal from './bpmn/BpmnEditorModal';   // ★ NEW
+import BpmnVersionList from './bpmn/BpmnVersionList';   // ★ NEW
 import 'vis-network/styles/vis-network.css';
 import 'bpmn-js/dist/assets/diagram-js.css';
 import 'bpmn-js/dist/assets/bpmn-font/css/bpmn.css';
@@ -416,7 +418,11 @@ export default function App() {
 
   // ★ Display name cache
   const [displayNameCache, setDisplayNameCache] = useState({});
-
+  // ★ Editor now lives in a full-page modal; the main area shows either the
+  //   version list (after a diagram is clicked) or the empty prompt.
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [versionListDiagramId, setVersionListDiagramId] = useState(null);
+  const [versionListRecord, setVersionListRecord] = useState(null);
   // Advanced Filtering, Interactions, & Accessibility State
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -458,7 +464,10 @@ export default function App() {
   // Collaborative editing via polling (Forge has no push channel). We poll the
   // cheap index; on a version change we either auto-reload (no local edits) or
   // raise a conflict banner (local edits present) so work is never lost.
-
+  const editorOpenRef = useRef(false);
+  useEffect(() => { editorOpenRef.current = editorOpen; }, [editorOpen]);
+  const viewingVersionRef = useRef(null);
+  useEffect(() => { viewingVersionRef.current = viewingVersion; }, [viewingVersion]);
   // "Reload" in the conflict banner: take the remote version even if dirty.
   const reloadBpmnFromServer = async () => {
     if (!selectedDiagramId) return;
@@ -663,7 +672,40 @@ export default function App() {
     bpmnVersionRef.current = null;   // +
     setBpmnConflict(null);           // +
   }
+  // Click a diagram in the library → show its version list (NOT the editor).
+  const openVersionList = async (id) => {
+    try {
+      const rec = await invoke('getBpmnDiagram', { diagramId: id });
+      setVersionListRecord(rec);
+      setVersionListDiagramId(id);
+      setSelectedDiagramId(id);   // drives the canEditDiagram effect
+      setEditorOpen(false);
+    } catch (e) {
+      setError('Failed to load versions: ' + e.message);
+    }
+  };
 
+  // Click a version in that list → open the editor modal on that version.
+  const openVersionInEditor = async (versionNumber) => {
+    const rec = versionListRecord;
+    if (!rec) return;
+    try {
+      const v = await invoke('getBpmnDiagramVersion', { diagramId: rec.id, version: versionNumber });
+      setSelectedDiagramId(rec.id);
+      setSelectedDiagramXml(v.xml);
+      upsertDiagramMeta(rec);
+      setViewingVersion(versionNumber);
+      setVersions(normalizeVersions(rec));
+      setBpmnDirty(false);
+      setBpmnConflict(null);
+      setVersionName('');
+      setEditorOpen(true);
+      // Drives the "most recent access date" ordering next time the list opens.
+      invoke('touchBpmnVersion', { diagramId: rec.id, version: versionNumber }).catch(() => {});
+    } catch (e) {
+      setError('Failed to open version: ' + e.message);
+    }
+  };
   const saveBpmnDiagram = async (xml) => {
     try {
       const payload = {
@@ -1145,6 +1187,12 @@ export default function App() {
         const meta = (index || []).find((d) => d.id === id);
         if (!meta || meta.version == null) return;
         if (meta.version === bpmnVersionRef.current) return;     // no change
+        // ★ Don't yank the editor off a version the user is intentionally
+        //   viewing in the modal (e.g. an older named version).
+        if (editorOpenRef.current && viewingVersionRef.current != null &&
+            viewingVersionRef.current !== meta.version) return;
+        if (!canEditDiagram || !bpmnDirtyRef.current) await applyRemote();
+        else setBpmnConflict(meta);
         if (!canEditDiagram || !bpmnDirtyRef.current) await applyRemote(); // viewers & clean editors: safe to take it
         else setBpmnConflict(meta);                                       // editor with local edits: don't clobber
       } catch (e) { /* ignore */ }
@@ -2071,18 +2119,8 @@ export default function App() {
               <p style={{ padding: '0 20px' }}>Loading diagrams…</p>
             ) : (
               <div style={{ padding: '0 20px', display: 'flex', gap: '20px' }}>
-                {/* Diagram library — left sidebar */}
-                <div id="bpmn-library-col" className="bpmn-diagram-library-col">
-                  <div className="bpmn-linked-panels-top" data-testid="bpmn-linked-panels-top">
-                    {canEditDiagram && (
-                      <div className="lr-slot-block">
-                        <div id="js-properties-panel" data-testid="bpmn-properties-panel" className="bpmn-panel" />
-                      </div>
-                    )}
-                    <div id="bpmn-linked-panels-nav-slot" />
-                  </div>
-                  {!showNavigator && (
-                    <div className="bpmn-diagram-library">
+              <div id="bpmn-library-col" className="bpmn-diagram-library-col">
+                <div className="bpmn-diagram-library">
                   <input
                     type="text"
                     placeholder="Search diagrams..."
@@ -2092,7 +2130,13 @@ export default function App() {
                     style={{ width: '100%', boxSizing: 'border-box', padding: '6px 8px', marginBottom: '8px' }}
                   />
                   <button
-                    onClick={startNewBpmnDiagram}
+                    onClick={() => {
+                      // ★ New diagram opens the modal directly (no versions yet).
+                      setVersionListDiagramId(null);
+                      setVersionListRecord(null);
+                      startNewBpmnDiagram();
+                      setEditorOpen(true);
+                    }}
                     data-testid="new-bpmn-diagram"
                     style={{ marginBottom: '10px', width: '100%' }}
                   >
@@ -2110,16 +2154,12 @@ export default function App() {
                       return (
                         <li key={d.id} style={{ marginBottom: '6px' }}>
                           <button
-                            onClick={() => openBpmnDiagram(d.id)}
+                            onClick={() => openVersionList(d.id)}   // ★ was openBpmnDiagram(d.id)
                             style={{
-                              display: 'block',
-                              width: '100%',
-                              textAlign: 'left',
+                              display: 'block', width: '100%', textAlign: 'left',
                               background: selectedDiagramId === d.id ? '#e6effc' : 'none',
-                              border: '1px solid #ddd',
-                              borderRadius: '4px',
-                              padding: '6px 8px',
-                              cursor: 'pointer',
+                              border: '1px solid #ddd', borderRadius: '4px',
+                              padding: '6px 8px', cursor: 'pointer',
                             }}
                           >
                             <div style={{ fontWeight: 'bold', fontSize: '13px' }}>{d.name}</div>
@@ -2141,102 +2181,23 @@ export default function App() {
                     })}
                   </ul>
                 </div>
-              )}
-            </div>
+              </div>
 
-                {/* Editor / viewer — main area */}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  {selectedDiagramId === null && selectedDiagramXml === null && !newDiagramProjectKey ? (
+                  {editorOpen ? null : versionListDiagramId && versionListRecord ? (
+                    <BpmnVersionList
+                      record={versionListRecord}
+                      onPickVersion={openVersionInEditor}
+                      onBack={() => {
+                        setVersionListDiagramId(null);
+                        setVersionListRecord(null);
+                        setSelectedDiagramId(null);
+                      }}
+                    />
+                  ) : (
                     <p style={{ color: '#666' }}>
                       Select a diagram from the library, or create a new one.
                     </p>
-                  ) : (
-                    <>
-                      {selectedDiagramId === null && (
-                        <>
-                          <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-                            <input
-                              type="text"
-                              placeholder="Diagram name"
-                              value={newDiagramName}
-                              onChange={(e) => setNewDiagramName(e.target.value)}
-                              data-testid="new-diagram-name"
-                            />
-                            <select
-                              value={newDiagramProjectKey}
-                              onChange={(e) => setNewDiagramProjectKey(e.target.value)}
-                              data-testid="new-diagram-project"
-                            >
-                              {projects.map(p => (
-                                <option key={p.key} value={p.key}>{p.name} ({p.key})</option>
-                              ))}
-                            </select>
-                          </div>
-                          {newDiagramNameInvalid && (
-                            <p style={{ color: '#bf2600', fontSize: '12px', margin: '-4px 0 10px' }}>
-                              {newDiagramNameTrimmed === ''
-                                ? 'Enter a name to enable saving.'
-                                : 'A diagram with this name already exists.'}
-                            </p>
-                          )}
-                        </>
-                      )}
-                      {!canEditDiagram && (
-                        <p style={{ fontSize: '12px', color: '#666' }}>
-                          View only — you need edit permission on this project to change this diagram.
-                        </p>
-                      )}
-                      {bpmnConflict && (
-                        <div role="alert" style={{
-                          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
-                          background: '#fff3cd', border: '1px solid #ffc107', borderRadius: 4,
-                          padding: '8px 12px', marginBottom: 8, fontSize: 12,
-                        }}>
-                          <span>
-                            This diagram was updated by {bpmnConflict.lastEditedBy || 'another user'}
-                            {' '}at {new Date(bpmnConflict.updatedAt).toLocaleTimeString()}.
-                            Your unsaved changes would be overwritten by a reload.
-                          </span>
-                          <span style={{ display: 'flex', gap: 6 }}>
-                            <button onClick={() => openBpmnDiagram(selectedDiagramId)} style={{ fontSize: 11 }}>Reload remote</button>                            <button onClick={() => setBpmnConflict(null)} style={{ fontSize: 11, background: 'none', border: 'none', cursor: 'pointer' }}>Keep mine</button>
-                          </span>
-                        </div>
-                      )}
-                      <ErrorBoundary key={selectedDiagramId || 'new'}>
-                        <BpmnDiagramView
-                          key={selectedDiagramId || 'new'}
-                          diagramXml={selectedDiagramXml}
-                          canEdit={canEditDiagram}
-                          onSave={saveBpmnDiagram}
-                          onDirtyChange={setBpmnDirty}
-                          saveDisabled={newDiagramNameInvalid || !versionName.trim()}
-                          modelName={selectedDiagramId ? (openDiagramMeta?.name || '') : (newDiagramName.trim() || 'New diagram')}
-                          modelVersion={viewingVersion ?? openDiagramMeta?.version}
-                          modelVersionName={versions.find((v) => v.version === viewingVersion)?.name}
-                          modelLastEditedBy={openDiagramMeta?.lastEditedBy}
-                          modelLastEditedByDisplay={
-                            displayNameCache[openDiagramMeta?.lastEditedBy] ||
-                            openDiagramMeta?.lastEditedByDisplay ||
-                            openDiagramMeta?.lastEditedBy
-                          }
-                          modelLastEditedAt={openDiagramMeta?.updatedAt}
-                          currentAccountId={currentUserAccountId}
-                          showNavigator={showNavigator}
-                          onToggleNavigator={() => setShowNavigator((v) => !v)}
-                          versions={versions.map((v) => ({
-                            ...v,
-                            savedByDisplay: displayNameCache[v.savedBy] || v.savedByDisplay || v.savedBy,
-                          }))}
-                          viewingVersion={viewingVersion}
-                          onSelectVersion={loadBpmnVersion}
-                          versionName={versionName}
-                          onVersionNameChange={setVersionName}
-                          diagramId={selectedDiagramId}
-                          projectKey={openDiagramMeta?.projectKey || newDiagramProjectKey}
-                          realtimeEvent={realtimeEvent}
-                        />
-                      </ErrorBoundary>
-                    </>
                   )}
                 </div>
               </div>
@@ -2244,6 +2205,104 @@ export default function App() {
           </section>
         )}
       </main>
+      <BpmnEditorModal
+        open={editorOpen}
+        onClose={() => setEditorOpen(false)}
+        dirty={bpmnDirty}
+        canEdit={canEditDiagram}
+        headerTitle={selectedDiagramId ? (openDiagramMeta?.name || 'Diagram') : 'New diagram'}
+        headerVersion={
+          selectedDiagramId
+            ? (versions.find((v) => v.version === viewingVersion)?.name ||
+               (viewingVersion != null ? `v${viewingVersion}` : ''))
+            : ''
+        }
+      >
+        {selectedDiagramId === null && (
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
+            <input
+              type="text"
+              placeholder="Diagram name"
+              value={newDiagramName}
+              onChange={(e) => setNewDiagramName(e.target.value)}
+              data-testid="new-diagram-name"
+            />
+            <select
+              value={newDiagramProjectKey}
+              onChange={(e) => setNewDiagramProjectKey(e.target.value)}
+              data-testid="new-diagram-project"
+            >
+              {projects.map(p => (
+                <option key={p.key} value={p.key}>{p.name} ({p.key})</option>
+              ))}
+            </select>
+          </div>
+        )}
+        {selectedDiagramId === null && newDiagramNameInvalid && (
+          <p style={{ color: '#bf2600', fontSize: '12px', margin: '-4px 0 10px' }}>
+            {newDiagramNameTrimmed === ''
+              ? 'Enter a name to enable saving.'
+              : 'A diagram with this name already exists.'}
+          </p>
+        )}
+        {!canEditDiagram && (
+          <p style={{ fontSize: '12px', color: '#666' }}>
+            View only — you need edit permission on this project to change this diagram.
+          </p>
+        )}
+        {bpmnConflict && (
+          <div role="alert" style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+            background: '#fff3cd', border: '1px solid #ffc107', borderRadius: 4,
+            padding: '8px 12px', marginBottom: 8, fontSize: 12,
+          }}>
+            <span>
+              This diagram was updated by {bpmnConflict.lastEditedBy || 'another user'}
+              {' '}at {new Date(bpmnConflict.updatedAt).toLocaleTimeString()}.
+              Your unsaved changes would be overwritten by a reload.
+            </span>
+            <span style={{ display: 'flex', gap: 6 }}>
+              <button onClick={() => openBpmnDiagram(selectedDiagramId)} style={{ fontSize: 11 }}>Reload remote</button>
+              <button onClick={() => setBpmnConflict(null)} style={{ fontSize: 11, background: 'none', border: 'none', cursor: 'pointer' }}>Keep mine</button>
+            </span>
+          </div>
+        )}
+        <ErrorBoundary key={selectedDiagramId || 'new'}>
+          <BpmnDiagramView
+            key={selectedDiagramId || 'new'}
+            diagramXml={selectedDiagramXml}
+            canEdit={canEditDiagram}
+            onSave={saveBpmnDiagram}
+            onDirtyChange={setBpmnDirty}
+            saveDisabled={newDiagramNameInvalid || !versionName.trim()}
+            modelName={selectedDiagramId ? (openDiagramMeta?.name || '') : (newDiagramName.trim() || 'New diagram')}
+            modelVersion={viewingVersion ?? openDiagramMeta?.version}
+            modelVersionName={versions.find((v) => v.version === viewingVersion)?.name}
+            modelLastEditedBy={openDiagramMeta?.lastEditedBy}
+            modelLastEditedByDisplay={
+              displayNameCache[openDiagramMeta?.lastEditedBy] ||
+              openDiagramMeta?.lastEditedByDisplay ||
+              openDiagramMeta?.lastEditedBy
+            }
+            modelLastEditedAt={openDiagramMeta?.updatedAt}
+            currentAccountId={currentUserAccountId}
+            showNavigator={showNavigator}
+            onToggleNavigator={() => setShowNavigator((v) => !v)}
+            versions={versions.map((v) => ({
+              ...v,
+              savedByDisplay: displayNameCache[v.savedBy] || v.savedByDisplay || v.savedBy,
+            }))}
+            viewingVersion={viewingVersion}
+            onSelectVersion={loadBpmnVersion}
+            versionName={versionName}
+            onVersionNameChange={setVersionName}
+            diagramId={selectedDiagramId}
+            projectKey={openDiagramMeta?.projectKey || newDiagramProjectKey}
+            realtimeEvent={realtimeEvent}
+            onOpenVersionList={() => setEditorOpen(false)}   // ★ back to the list
+          />
+        </ErrorBoundary>
+      </BpmnEditorModal>
     </div>
   );
 }

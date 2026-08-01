@@ -39,6 +39,29 @@ async function jiraPost(path, body) {
   return res.json();
 }
 
+// Records that a user opened a specific version in the editor. Called only on
+// an explicit open (never from the 4 s poll), so it doesn't spam writes. The
+// version list sorts by this field, falling back to savedAt.
+resolver.define('touchBpmnVersion', async ({ payload }) => {
+  const { diagramId, version } = payload;
+  const key = bpmnDiagramKey(diagramId);
+  const diagram = await kvs.get(key);
+  if (!diagram) return { touched: false };
+  const now = new Date().toISOString();
+  let changed = false;
+  if (Array.isArray(diagram.versions)) {
+    const v = diagram.versions.find((x) => x.version === version);
+    if (v) { v.lastAccessedAt = now; changed = true; }
+  }
+  if (diagram.version === version) { diagram.lastAccessedAt = now; changed = true; }
+  if (changed) {
+    await kvs.set(key, diagram);
+    const blob = await kvs.get(bpmnVersionKey(diagramId, version));
+    if (blob) { blob.lastAccessedAt = now; await kvs.set(bpmnVersionKey(diagramId, version), blob); }
+  }
+  return { touched: changed, lastAccessedAt: now };
+});
+
 // ─── User display-name resolution ───────────────────────────────────
 // Cache in kvs so we don't hammer the Jira API on every render.
 const USER_CACHE_KEY = 'user:displaynames';
@@ -269,6 +292,7 @@ resolver.define('saveBpmnDiagram', async ({ payload, context }) => {
   const versionEntry = {
     version, name: vName, savedAt: now,
     savedBy: accountId, savedByDisplay: editorDisplay,
+    lastAccessedAt: now,   // ★ a save is also an access
   };
 
   let versions = Array.isArray(existing?.versions) ? existing.versions.slice() : [];

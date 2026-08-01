@@ -933,18 +933,24 @@ describe('App', () => {
       mockInvoke({
         getProjects: projectsMock,
         getCurrentUser: { accountId: 'acc-not-a-lead' },
-        getBpmnDiagrams: [{ id: 'diagram-1', name: 'Refund Flow', projectKey: 'PROJ1', updatedAt: '2026-01-01' }],
-        getBpmnDiagram: { id: 'diagram-1', name: 'Refund Flow', projectKey: 'PROJ1', xml: '<xml/>' },
+        getBpmnDiagrams: [{ id: 'diagram-1', name: 'Refund Flow', projectKey: 'PROJ1', updatedAt: '2026-01-01', version: 1 }],
+        getBpmnDiagram: {
+          id: 'diagram-1', name: 'Refund Flow', projectKey: 'PROJ1', xml: '<xml/>', version: 1,
+          versions: [{ version: 1, name: 'v1', savedAt: '2026-01-01', savedBy: 'acc-x', savedByDisplay: 'Someone' }],
+        },
+        getBpmnDiagramVersion: { version: 1, xml: '<xml/>', savedBy: 'acc-x' },
+        touchBpmnVersion: () => ({ touched: true }),
         canEditProject: () => ({ canEdit: false }),
       });
-
       render(<App />);
       await waitFor(() => screen.getByText('Alpha'));
       fireEvent.click(screen.getByRole('tab', { name: /BPMN/i }));
       await waitFor(() => screen.getByText('Refund Flow'));
-
+      // Clicking a diagram now opens the version list, not the editor.
       fireEvent.click(screen.getByText('Refund Flow'));
-
+      await waitFor(() => expect(screen.getByTestId('bpmn-version-list')).toBeInTheDocument());
+      // Picking a version opens the editor in the full-page modal (read-only here).
+      fireEvent.click(screen.getByTestId('bpmn-version-row-1'));
       await waitFor(() => expect(screen.getByTestId('bpmn-canvas')).toBeInTheDocument());
       await waitFor(() => expect(screen.getByText(/you need edit permission on this project/i)).toBeInTheDocument());
       expect(screen.queryByTestId('save-bpmn')).not.toBeInTheDocument();

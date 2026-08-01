@@ -363,3 +363,90 @@
 .bpmn-diagram-library-col:has(#bpmn-linked-panels-nav-slot .bpmn-navigator) > [data-testid="bpmn-diagram-list"] {
   display: none;
 }
+/* ============================================================
+   Full-page editor modal
+   ============================================================ */
+@keyframes bpmn-fade { from { opacity: 0; } to { opacity: 1; } }
+.bpmn-modal-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(9, 30, 66, .54);
+  display: flex; animation: bpmn-fade .15s ease;
+}
+.bpmn-modal {
+  position: relative; width: 100%; height: 100%;
+  background: var(--ads-surface, #fff);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.bpmn-modal-header {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 16px; border-bottom: 1px solid var(--ads-border, #dfe1e6);
+  background: var(--ads-surface-2, #fafbfc);
+}
+.bpmn-modal-title { font-size: 15px; font-weight: 600; }
+.bpmn-modal-close {
+  margin-left: auto; height: 32px; min-width: 32px; padding: 0 10px;
+  border-radius: 6px; border: 1px solid var(--ads-border, #dfe1e6);
+  background: #fff; cursor: pointer; font-size: 18px; line-height: 1;
+}
+.bpmn-modal-close:hover { background: var(--ads-neutral, #ebecf0); }
+.bpmn-modal-body {
+  flex: 1 1 auto; display: flex; gap: 12px;
+  padding: 12px 16px; overflow: hidden; min-height: 0;
+}
+.bpmn-modal-side {
+  flex: 0 0 360px; display: flex; flex-direction: column;
+  gap: 12px; overflow-y: auto; min-height: 0;
+}
+.bpmn-modal-canvas-col {
+  flex: 1 1 auto; display: flex; flex-direction: column;
+  gap: 10px; min-width: 0; min-height: 0;
+}
+/* Let the canvas fill the modal instead of using its fixed clamp height. */
+.bpmn-modal-canvas-col .bpmn-editor-shell { flex: 1 1 auto; min-height: 0; }
+.bpmn-modal-canvas-col .bpmn-canvas-col { flex: 1 1 auto; min-height: 0; }
+.bpmn-modal-canvas-col .bpmn-canvas { height: auto; flex: 1 1 auto; min-height: 420px; }
+@media (max-width: 900px) {
+  .bpmn-modal-body { flex-direction: column; overflow-y: auto; }
+  .bpmn-modal-side { flex: 0 0 auto; width: 100%; max-height: 320px; }
+}
+
+/* ============================================================
+   Tidy toolbar (single row)
+   ============================================================ */
+.bpmn-toolbar { flex-wrap: wrap; row-gap: 8px; }
+.bpmn-tb-btn.icon { min-width: 32px; padding: 0 8px; font-size: 14px; }
+.bpmn-tb-btn.active { background: var(--ads-blue-subtle, #deebff); color: var(--ads-blue, #0052cc); }
+.bpmn-tb-version-name { display: inline-flex; align-items: center; gap: 6px; }
+.bpmn-tb-version-name input { height: 30px; min-width: 150px; max-width: 200px; }
+.bpmn-tb-label-text { font-size: 12px; color: var(--ads-text-sub, #6b778c); white-space: nowrap; }
+
+/* ============================================================
+   Version list (shown after clicking a diagram)
+   ============================================================ */
+.bpmn-version-list {
+  background: var(--ads-surface, #fff);
+  border: 1px solid var(--ads-border, #dfe1e6); border-radius: 10px;
+  box-shadow: var(--shadow-1, 0 1px 2px rgba(9, 30, 66, .08)); overflow: hidden;
+}
+.bpmn-vl-header {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 12px 14px; border-bottom: 1px solid var(--ads-border, #dfe1e6);
+  background: var(--ads-surface-2, #fafbfc);
+}
+.bpmn-vl-title { font-size: 15px; font-weight: 600; margin: 0; }
+.bpmn-vl-search { margin-left: auto; min-width: 200px; height: 32px; }
+.bpmn-vl-list { list-style: none; margin: 0; padding: 6px; max-height: 62vh; overflow-y: auto; }
+.bpmn-vl-row {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  padding: 10px 12px; border: 1px solid transparent; border-radius: 8px;
+  background: transparent; cursor: pointer;
+}
+.bpmn-vl-row:hover { background: var(--ads-blue-faint, rgba(0, 82, 204, .06)); border-color: var(--ads-blue-subtle, #b3d4ff); }
+.bpmn-vl-row-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.bpmn-vl-row-name { font-size: 13px; font-weight: 600; }
+.bpmn-vl-row-meta { font-size: 11px; color: var(--ads-text-muted, #6b778c); }
+.bpmn-vl-badge {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+  padding: 2px 8px; border-radius: 999px;
+  background: var(--ads-blue-subtle, #deebff); color: var(--ads-blue, #0052cc);
+}
