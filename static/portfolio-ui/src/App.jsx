@@ -6,6 +6,7 @@ import { jsPDF } from 'jspdf';
 import BpmnDiagramView from './bpmn/BpmnDiagramView';
 import BpmnEditorModal from './bpmn/BpmnEditorModal';   // ★ NEW
 import BpmnVersionList from './bpmn/BpmnVersionList';   // ★ NEW
+import BpmnCommitHistory from './bpmn/BpmnCommitHistory';
 import 'vis-network/styles/vis-network.css';
 import 'bpmn-js/dist/assets/diagram-js.css';
 import 'bpmn-js/dist/assets/bpmn-font/css/bpmn.css';
@@ -415,7 +416,39 @@ export default function App() {
     // ★ Realtime state
   const [realtimeEvent, setRealtimeEvent] = useState(null);
   const REALTIME_CHANNEL = 'bpmn-diagram-events';
+  const [historyRecord, setHistoryRecord] = useState(null);
 
+  const openCommitHistory = async (id) => {
+    try {
+      const rec = await invoke('getBpmnDiagram', { diagramId: id });
+      setHistoryRecord(rec);
+      setSelectedDiagramId(id);
+      const ids = (rec.versions || []).map((v) => v.savedBy).filter(Boolean);
+      if (rec.lastEditedBy) ids.push(rec.lastEditedBy);
+      await resolveDisplayNames(ids);
+    } catch (e) { setError(e.message); }
+  };
+
+  const handleRevert = async (toVersion) => {
+    if (!historyRecord) return;
+    try {
+      const rec = await invoke('revertBpmnDiagram', {
+        diagramId: historyRecord.id, toVersion, baseVersion: historyRecord.version,
+      });
+      setHistoryRecord(rec);                 // new revert commit lands at the top
+      upsertDiagramMeta(rec);
+      setBpmnDiagrams(await invoke('getBpmnDiagrams'));
+      setSrAnnouncement(`Reverted to v${toVersion} as new commit v${rec.version}`);
+    } catch (e) {
+      if (e.message && e.message.startsWith('Conflict:')) {
+        setBpmnConflict({
+          lastEditedBy: e.message.match(/saved by (.+?) at/)?.[1] || 'another user',
+          updatedAt: e.message.match(/at (.+?)\./)?.[1] || new Date().toISOString(),
+        });
+      }
+      setError(e.message);
+    }
+  };
   // ★ Display name cache
   const [displayNameCache, setDisplayNameCache] = useState({});
   // ★ Editor now lives in a full-page modal; the main area shows either the
@@ -2154,7 +2187,7 @@ export default function App() {
                       return (
                         <li key={d.id} style={{ marginBottom: '6px' }}>
                           <button
-                            onClick={() => openVersionList(d.id)}   // ★ was openBpmnDiagram(d.id)
+                            onClick={() => openCommitHistory(d.id)}   // was: openBpmnDiagram(d.id)   // ★ was openBpmnDiagram(d.id)
                             style={{
                               display: 'block', width: '100%', textAlign: 'left',
                               background: selectedDiagramId === d.id ? '#e6effc' : 'none',
@@ -2184,15 +2217,13 @@ export default function App() {
               </div>
 
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  {editorOpen ? null : versionListDiagramId && versionListRecord ? (
-                    <BpmnVersionList
-                      record={versionListRecord}
-                      onPickVersion={openVersionInEditor}
-                      onBack={() => {
-                        setVersionListDiagramId(null);
-                        setVersionListRecord(null);
-                        setSelectedDiagramId(null);
-                      }}
+                  {historyRecord ? (
+                    <BpmnCommitHistory
+                      record={historyRecord}
+                      canEdit={canEditDiagram}
+                      onPickVersion={(v) => { setHistoryRecord(null); loadBpmnVersion(v); }}
+                      onRevert={handleRevert}
+                      onBack={() => { setHistoryRecord(null); setSelectedDiagramId(null); }}
                     />
                   ) : (
                     <p style={{ color: '#666' }}>

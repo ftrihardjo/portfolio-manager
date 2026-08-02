@@ -532,4 +532,71 @@ describe('BPMN diagrams (getCurrentUser, getBpmnDiagrams, getBpmnDiagram, saveBp
     });
     expect(result).toEqual({ deleted: false });
   });
+
+    it('revertBpmnDiagram appends a new "revert" commit copying the target XML, keeping history intact', async () => {
+    mockCanEdit(true);
+    const v1 = await getResolver('saveBpmnDiagram')({
+      payload: { diagramId: null, name: 'd', projectKey: 'TEST', xml: '<xml v="1"/>', versionName: 'one' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+    mockCanEdit(true);
+    const v2 = await getResolver('saveBpmnDiagram')({
+      payload: { diagramId: v1.id, name: 'd', projectKey: 'TEST', xml: '<xml v="2"/>', versionName: 'two', baseVersion: 1 },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+    expect(v2.version).toBe(2);
+
+    mockCanEdit(true);
+    const reverted = await getResolver('revertBpmnDiagram')({
+      payload: { diagramId: v1.id, toVersion: 1, baseVersion: 2 },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+
+    // A NEW head (v3) — history is never rewritten.
+    expect(reverted.version).toBe(3);
+    expect(reverted.xml).toBe('<xml v="1"/>');           // content copied from v1
+    expect(reverted.versions).toHaveLength(3);
+    const head = reverted.versions[reverted.versions.length - 1];
+    expect(head.kind).toBe('revert');
+    expect(head.revertedFromVersion).toBe(1);
+    expect(head.parentVersion).toBe(2);
+    expect(head.savedBy).toBe(LEAD_ACCOUNT_ID);
+    // The undone commit is still present and unchanged.
+    expect(reverted.versions[1].xml ? reverted.versions[1].version : reverted.versions[1].version).toBe(2);
+  });
+
+  it('revertBpmnDiagram rejects a user without edit permission', async () => {
+    mockCanEdit(true);
+    const v1 = await getResolver('saveBpmnDiagram')({
+      payload: { diagramId: null, name: 'd', projectKey: 'TEST', xml: '<xml/>' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+    mockCanEdit(true);
+    await getResolver('saveBpmnDiagram')({
+      payload: { diagramId: v1.id, name: 'd', projectKey: 'TEST', xml: '<xml v2/>', baseVersion: 1 },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+    mockCanEdit(false);
+    await expect(
+      getResolver('revertBpmnDiagram')({
+        payload: { diagramId: v1.id, toVersion: 1, baseVersion: 2 },
+        context: { accountId: OTHER_ACCOUNT_ID },
+      })
+    ).rejects.toThrow('You need edit permission on this project to revert this diagram.');
+  });
+
+  it('revertBpmnDiagram refuses to revert to the current HEAD', async () => {
+    mockCanEdit(true);
+    const v1 = await getResolver('saveBpmnDiagram')({
+      payload: { diagramId: null, name: 'd', projectKey: 'TEST', xml: '<xml/>' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+    mockCanEdit(true);
+    await expect(
+      getResolver('revertBpmnDiagram')({
+        payload: { diagramId: v1.id, toVersion: 1, baseVersion: 1 },
+        context: { accountId: LEAD_ACCOUNT_ID },
+      })
+    ).rejects.toThrow('already the latest');
+  });
 });

@@ -292,7 +292,12 @@ resolver.define('saveBpmnDiagram', async ({ payload, context }) => {
   const versionEntry = {
     version, name: vName, savedAt: now,
     savedBy: accountId, savedByDisplay: editorDisplay,
-    lastAccessedAt: now,   // ★ a save is also an access
+    lastAccessedAt: now,
+    // ★ commit metadata — turns a "version" into a signed, chainable commit
+    kind: 'save',
+    parentVersion: existing?.version ?? null,
+    message: (typeof payload.message === 'string' && payload.message.trim())
+      ? payload.message.trim() : '',
   };
 
   let versions = Array.isArray(existing?.versions) ? existing.versions.slice() : [];
@@ -428,6 +433,89 @@ resolver.define('saveAutomationRules', async ({ payload, context }) => {
   }
 
   return { saved: true, count: rules.length };
+});
+
+// Revert = create a NEW head commit whose XML is copied from an older one.
+// Append-only on purpose: the commit being undone stays in the ledger, the
+// revert sits on top of it (exactly how `git revert` works), so nothing is
+// ever lost and the chain of custody is unbroken.
+resolver.define('revertBpmnDiagram', async ({ payload, context }) => {
+  const { diagramId, toVersion, baseVersion, message } = payload;
+  const accountId = context?.accountId ?? null;
+  const diagram = await kvs.get(bpmnDiagramKey(diagramId));
+  if (!diagram) throw new Error(`Diagram ${diagramId} not found`);
+  if (!(await canEditProject(diagram.projectKey, accountId))) {
+    throw new Error('You need edit permission on this project to revert this diagram.');
+  }
+  // Optimistic lock — same contract as saveBpmnDiagram, so a concurrent
+  // edit between "I opened the ledger" and "I clicked revert" surfaces as
+  // the existing conflict banner instead of silently clobbering work.
+  if (typeof baseVersion === 'number' && baseVersion !== diagram.version) {
+    const editorName = await resolveDisplayName(diagram.lastEditedBy);
+    throw new Error(
+      `Conflict: this diagram was saved by ${editorName} at ${diagram.updatedAt}. Reload before reverting.`
+    );
+  }
+  if (toVersion === diagram.version) {
+    throw new Error('That version is already the latest — nothing to revert.');
+  }
+
+  // Resolve the target snapshot's XML + name (per-version blob first, then
+  // the head record as a fallback for legacy single-version diagrams).
+  let targetXml = null;
+  let targetName = `v${toVersion}`;
+  const blob = await kvs.get(bpmnVersionKey(diagramId, toVersion));
+  if (blob) { targetXml = blob.xml; targetName = blob.name || targetName; }
+  else if (diagram.version === toVersion) { targetXml = diagram.xml; targetName = diagram.latestVersionName || targetName; }
+  else throw new Error(`Version ${toVersion} not found; cannot revert.`);
+
+  const now = new Date().toISOString();
+  const version = diagram.version + 1;
+  const editorDisplay = await resolveDisplayName(accountId);
+  const autoMsg = `Reverted to ${targetName} (v${toVersion})`;
+  const versionEntry = {
+    version, name: `v${version}`, savedAt: now,
+    savedBy: accountId, savedByDisplay: editorDisplay, lastAccessedAt: now,
+    kind: 'revert',
+    parentVersion: diagram.version,
+    revertedFromVersion: toVersion,
+    message: (typeof message === 'string' && message.trim()) ? message.trim() : autoMsg,
+  };
+
+  const versions = Array.isArray(diagram.versions) ? diagram.versions.slice() : [];
+  versions.push(versionEntry);
+  await kvs.set(bpmnVersionKey(diagramId, version), { ...versionEntry, xml: targetXml });
+
+  const record = {
+    ...diagram,
+    xml: targetXml,
+    updatedAt: now, version,
+    lastEditedBy: accountId, lastEditedByDisplay: editorDisplay,
+    versions, latestVersionName: versionEntry.name,
+  };
+  await kvs.set(bpmnDiagramKey(diagramId), record);
+
+  // Index meta keeps the SAME shape as saveBpmnDiagram writes — no new
+  // fields here, so the existing index-shape test stays green.
+  const index = (await kvs.get(BPMN_INDEX_KEY)) || [];
+  const meta = {
+    id: diagramId, name: diagram.name, projectKey: diagram.projectKey, updatedAt: now,
+    lastEditedBy: accountId, lastEditedByDisplay: editorDisplay,
+    version, latestVersionName: versionEntry.name,
+  };
+  await kvs.set(BPMN_INDEX_KEY, index.map((d) => (d.id === diagramId ? meta : d)));
+
+  try {
+    await publish(REALTIME_CHANNEL, {
+      type: 'diagram:saved', diagramId, version,
+      versionName: versionEntry.name, savedAt: now,
+      savedBy: accountId, savedByDisplay: editorDisplay,
+      projectKey: diagram.projectKey,
+      kind: 'revert', revertedFromVersion: toVersion,
+    });
+  } catch (e) { console.error('Realtime publish failed (non-fatal):', e); }
+
+  return record;
 });
 
 export const handler = resolver.getDefinitions();
