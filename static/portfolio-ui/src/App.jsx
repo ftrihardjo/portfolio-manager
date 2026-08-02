@@ -253,9 +253,10 @@ function exportSummaryAsPDF(summary) {
 // This is purely additive — the existing card list stays right below it
 // as the accessible, screen-reader-friendly detail view; the graph is a
 // visual overview layered on top, not a replacement.
-function DependencyGraph({ issues, circularPath, onNodeClick }) {
+function DependencyGraph({ issues, circularPath, onNodeClick, focusIds = [] }) {
   const containerRef = useRef(null);
   const networkRef = useRef(null);
+  const nodesRef = useRef(null);
 
   useEffect(() => {
     if (!containerRef.current || issues.length === 0) return undefined;
@@ -315,6 +316,7 @@ function DependencyGraph({ issues, circularPath, onNodeClick }) {
     });
 
     const data = { nodes, edges: new DataSet(edgeList) };
+    nodesRef.current = nodes;
     const options = {
       layout: {
         hierarchical: {
@@ -340,8 +342,58 @@ function DependencyGraph({ issues, circularPath, onNodeClick }) {
     return () => {
       networkRef.current?.destroy();
       networkRef.current = null;
+      nodesRef.current = null;
     };
   }, [issues, circularPath, onNodeClick]);
+
+  // Search spotlights + zooms; it never removes nodes from the diagram.
+  const prevFocusRef = useRef([]);
+  useEffect(() => {
+    const nodes = nodesRef.current;
+    const network = networkRef.current;
+    if (!nodes || !network) return undefined;
+
+    const cycleIds = new Set(circularPath || []);
+    const issueById = new Map(issues.map((i) => [i.id, i]));
+    const statusColor = (s) => (s === 'done' ? '#36B37E' : s === 'indeterminate' ? '#0052CC' : '#97A0AF');
+    const prev = new Set(prevFocusRef.current);
+    const next = new Set(focusIds);
+
+    // Restyle only nodes whose match-state changed (amber = search match;
+    // red cycle border always wins).
+    const updates = [];
+    new Set([...prev, ...next]).forEach((id) => {
+      const issue = issueById.get(id);
+      if (!issue) return;
+      const inCycle = cycleIds.has(id);
+      const matched = next.has(id);
+      const base = statusColor(issue.statusCategory);
+      updates.push({
+        id,
+        color: {
+          background: base,
+          border: inCycle ? '#DE350B' : matched ? '#FFAB00' : base,
+          highlight: { background: base, border: '#091E42' },
+        },
+        borderWidth: inCycle ? 3 : matched ? 3 : 1,
+      });
+    });
+    if (updates.length > 0) nodes.update(updates);
+    prevFocusRef.current = focusIds;
+
+    // Move the camera.
+    if (next.size === 1) {
+      const [id] = [...next];
+      network.selectNodes([id]);
+      network.focus(id, { scale: 1.2, animation: { duration: 400, easingFunction: 'easeInOutQuad' } });
+    } else if (next.size > 1) {
+      network.selectNodes([...next]);
+      network.fit({ nodes: [...next], animation: { duration: 400, easingFunction: 'easeInOutQuad' } });
+    } else {
+      network.unselectAll();
+      network.fit({ animation: { duration: 300, easingFunction: 'easeInOutQuad' } });
+    }
+  }, [focusIds, issues, circularPath]);
 
   if (issues.length === 0) return null;
 
@@ -363,6 +415,12 @@ function DependencyGraph({ issues, circularPath, onNodeClick }) {
         role="img"
         aria-label="Dependency graph diagram showing blocking relationships between issues. See the list below for an accessible, text-based view of the same relationships."
       />
+      {focusIds.length > 0 && (
+        <span>
+          <span style={{ display: 'inline-block', width: 10, height: 10, border: '2px solid #FFAB00', marginRight: 4, borderRadius: 2 }} />
+          Search match ({focusIds.length})
+        </span>
+      )}
       <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#666', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
         <span><span style={{ display: 'inline-block', width: 10, height: 10, background: '#36B37E', marginRight: 4, borderRadius: 2 }} />Done</span>
         <span><span style={{ display: 'inline-block', width: 10, height: 10, background: '#0052CC', marginRight: 4, borderRadius: 2 }} />In Progress</span>
@@ -961,6 +1019,25 @@ export default function App() {
     const startIndex = (currentPage - 1) * 10;
     return filteredAndSortedProjects.slice(startIndex, startIndex + 10);
   }, [filteredAndSortedProjects, currentPage]);
+
+  // The diagram sees every issue that passes the NON-search filters, so a
+  // search never tears nodes out of the graph — it only zooms to them.
+  const graphIssues = useMemo(() => {
+    let result = dependencies;
+    if (depTypeFilter) result = result.filter((d) => d.links?.some((l) => l.type === depTypeFilter));
+    if (depStatusFilter) result = result.filter((d) => d.statusCategory === depStatusFilter);
+    if (depOnlyLinked) result = result.filter((d) => d.links && d.links.length > 0);
+    return result;
+  }, [dependencies, depTypeFilter, depStatusFilter, depOnlyLinked]);
+
+  // The node ids the current search text matches — this drives the zoom.
+  const searchFocusIds = useMemo(() => {
+    const q = depSearchQuery.trim().toLowerCase();
+    if (!q) return [];
+    return graphIssues
+      .filter((d) => d.id.toLowerCase().includes(q) || (d.title && d.title.toLowerCase().includes(q)))
+      .map((d) => d.id);
+  }, [graphIssues, depSearchQuery]);
 
   const filteredDependencies = useMemo(() => {
     let result = dependencies;
@@ -1841,7 +1918,8 @@ export default function App() {
             ) : (
               <>
                 <DependencyGraph
-                  issues={filteredDependencies}
+                  issues={graphIssues}
+                  focusIds={searchFocusIds}
                   circularPath={circularDependencyPath}
                   onNodeClick={openIssueInJira}
                 />
