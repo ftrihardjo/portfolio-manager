@@ -602,3 +602,11 @@
   .cl-stats { margin-left: 0; width: 100%; justify-content: space-between; }
   .cl-stat { align-items: flex-start; }
 }
+.projects-table .avatar {
+  width: 32px; height: 32px;
+  object-fit: cover; border-radius: 4px;
+  vertical-align: middle; margin-right: 8px;
+  flex: 0 0 auto;
+}
+.projects-table .project-cell { white-space: nowrap; }
+.projects-table .project-cell button { vertical-align: middle; }

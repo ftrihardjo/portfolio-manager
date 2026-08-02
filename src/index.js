@@ -28,11 +28,10 @@ async function jiraGet(path, params = {}) {
   return res.json();
 }
 
-// ✅ FIXED — pass the path string straight to requestJira.
-// The old `route[path]` did a property lookup on the tagged-template
-// function and returned undefined, so the real runtime threw on every call.
+// ✅ Path lives in the strings array (literal), so its slashes stay literal.
+// A raw string is rejected by the runtime; route`${path}` would %-encode it.
 async function jiraPost(path, body) {
-  const res = await api.asUser().requestJira(path, {
+  const res = await api.asUser().requestJira(route([path]), {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
