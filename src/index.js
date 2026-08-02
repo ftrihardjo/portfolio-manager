@@ -28,7 +28,9 @@ async function jiraGet(path, params = {}) {
   return res.json();
 }
 
-// ✅ FIXED
+// ✅ FIXED — pass the path string straight to requestJira.
+// The old `route[path]` did a property lookup on the tagged-template
+// function and returned undefined, so the real runtime threw on every call.
 async function jiraPost(path, body) {
   const res = await api.asUser().requestJira(path, {
     method: 'POST',
@@ -38,6 +40,79 @@ async function jiraPost(path, body) {
   if (!res.ok) throw new Error(`Jira ${res.status} on ${path}: ${await res.text()}`);
   return res.json();
 }
+
+// Portable "how many issues match this JQL" — POST /search with maxResults:0
+// returns { total: N, issues: [] } on every Jira Cloud instance.
+async function countJql(jql) {
+  const r = await jiraPost('/rest/api/3/search/approximate-count', { jql });
+  const n = r?.count ?? r?.total;          // approximate-count returns { count }; /search returns { total }
+  return typeof n === 'number' ? n : 0;
+}
+
+resolver.define('getProjectStats', async ({ payload }) => {
+  const { projectKey } = payload;
+  const base = `project = "${projectKey}"`;
+
+  // Primary counts — each isolated; one bad JQL yields 0, never a total wipe.
+  let countError = null;
+  const safeCount = async (jql) => {
+    try { return await countJql(jql); }
+    catch (e) { countError = countError || e.message; return 0; }
+  };
+  const [total, done, inProgress, overdueCount] = await Promise.all([
+    safeCount(base),
+    safeCount(`${base} AND statusCategory = Done`),
+    safeCount(`${base} AND statusCategory = "In Progress"`),
+    safeCount(`${base} AND issuetype = Epic AND duedate < now() AND statusCategory != Done`),
+  ]);
+
+  // Secondary data — non-fatal. A failure here degrades to 0 / null instead
+  // of throwing the whole resolver (which is what produced the silent zeros).
+  let blockedCount = 0;
+  try {
+    const blockedData = await jiraGet('/rest/api/3/search/jql', {
+      jql: base, maxResults: '100', fields: 'status,issuelinks',
+    });
+    blockedCount = (blockedData.issues || []).filter((i) =>
+      (i.fields.issuelinks || []).some((l) =>
+        l.type?.name === 'Blocks' && l.inwardIssue &&
+        l.inwardIssue.fields?.status?.statusCategory?.key !== 'done'
+      )).length;
+  } catch (e) { countError = countError || e.message; }
+
+  let startDate = null;
+  try {
+    // NOTE: 10015 is the "Start date" custom-field id on many sites but NOT
+    // all. If it 400s on yours this now degrades to null (Start shows "—",
+    // which is correct when the epic has no start date anyway) instead of
+    // killing the counts. See the README note on resolving it by name.
+    const earliestEpic = await jiraGet('/rest/api/3/search/jql', {
+      jql: `${base} AND issuetype = Epic AND cf[10015] is not EMPTY ORDER BY cf[10015] ASC`,
+      maxResults: '1', fields: 'customfield_10015',
+    });
+    startDate = earliestEpic.issues?.[0]?.fields?.customfield_10015 ?? null;
+  } catch (e) { countError = countError || e.message; }
+
+  let dueDate = null;
+  try {
+    const latestEpic = await jiraGet('/rest/api/3/search/jql', {
+      jql: `${base} AND issuetype = Epic AND duedate is not EMPTY ORDER BY duedate DESC`,
+      maxResults: '1', fields: 'duedate',
+    });
+    dueDate = latestEpic.issues?.[0]?.fields?.duedate ?? null;
+  } catch (e) { countError = countError || e.message; }
+
+  const blockedRatio = total > 0 ? blockedCount / total : 0;
+  const overdueComponent = Math.min(overdueCount, 3) / 3;
+  const riskScore = Math.round(100 * (0.5 * blockedRatio + 0.5 * overdueComponent));
+
+  const out = {
+    total, done, blocked: blockedCount, inProgress,
+    overdueEpics: overdueCount, riskScore, startDate, dueDate,
+  };
+  if (countError) out._error = countError;   // surfaced by the UI; ignored otherwise
+  return out;
+});
 
 // Records that a user opened a specific version in the editor. Called only on
 // an explicit open (never from the 4 s poll), so it doesn't spam writes. The
@@ -121,37 +196,6 @@ resolver.define('getProjects', async () => {
     leadAccountId: p.lead?.accountId ?? null,
     avatarUrl: p.avatarUrls?.['32x32'] ?? null,
   }));
-});
-
-resolver.define('getProjectStats', async ({ payload }) => {
-  const { projectKey } = payload;
-  const base = `project = "${projectKey}"`;
-  const [all, done, inProgress, overdueEpics, blockedData, earliestEpic, latestEpic] =
-    await Promise.all([
-      jiraPost('/rest/api/3/search/approximate-count', { jql: base }),
-      jiraPost('/rest/api/3/search/approximate-count', { jql: `${base} AND statusCategory = Done` }),
-      jiraPost('/rest/api/3/search/approximate-count', { jql: `${base} AND statusCategory = "In Progress"` }),
-      jiraPost('/rest/api/3/search/approximate-count', { jql: `${base} AND issuetype = Epic AND duedate < now() AND statusCategory != Done` }),
-      jiraGet('/rest/api/3/search/jql', { jql: base, maxResults: '100', fields: 'status,issuelinks' }),
-      jiraGet('/rest/api/3/search/jql', { jql: `${base} AND issuetype = Epic AND cf[10015] is not EMPTY ORDER BY cf[10015] ASC`, maxResults: '1', fields: 'customfield_10015' }),
-      jiraGet('/rest/api/3/search/jql', { jql: `${base} AND issuetype = Epic AND duedate is not EMPTY ORDER BY duedate DESC`, maxResults: '1', fields: 'duedate' }),
-    ]);
-  const total = all.count ?? 0;
-  const blockedCount = (blockedData.issues || []).filter((i) =>
-    (i.fields.issuelinks || []).some((l) =>
-      l.type?.name === 'Blocks' && l.inwardIssue &&
-      l.inwardIssue.fields?.status?.statusCategory?.key !== 'done'
-    )).length;
-  const overdueCount = overdueEpics.count ?? 0;
-  const blockedRatio = total > 0 ? blockedCount / total : 0;
-  const overdueComponent = Math.min(overdueCount, 3) / 3;
-  const riskScore = Math.round(100 * (0.5 * blockedRatio + 0.5 * overdueComponent));
-  return {
-    total, done: done.count ?? 0, blocked: blockedCount,
-    inProgress: inProgress.count ?? 0, overdueEpics: overdueCount, riskScore,
-    startDate: earliestEpic.issues?.[0]?.fields?.customfield_10015 ?? null,
-    dueDate: latestEpic.issues?.[0]?.fields?.duedate ?? null,
-  };
 });
 
 resolver.define('getIssueDependencies', async ({ payload }) => {

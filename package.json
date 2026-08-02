@@ -31,7 +31,10 @@
     "qs": "^6.15.2"
   },
   "scripts": {
-    "test": "jest"
+    "test": "jest",
+    "build:ui": "npm --prefix static/portfolio-ui run build",
+    "deploy": "npm run build:ui && forge deploy",
+    "deploy:upgrade": "npm run build:ui && forge deploy && forge install --upgrade"
   },
   "jest": {
     "transform": {

@@ -151,10 +151,10 @@ describe('getProjectStats', () => {
 
   it('returns stats from four approximate-count calls, a link-based blocked count, and epic date range', async () => {
     [
-      { count: 10 },
-      { count: 5 },
-      { count: 3 },
-      { count: 1 },
+      { total: 10 },
+      { total: 5 },
+      { total: 3 },
+      { total: 1 },
       {
         issues: [
           {
@@ -193,7 +193,7 @@ describe('getProjectStats', () => {
     const calls = requestJiraMock.mock.calls;
 
     for (const [url, options] of calls.slice(0, 4)) {
-      expect(url).toBe('/rest/api/3/search/approximate-count');
+      expect(url).toBe('/rest/api/3/search/approximate-count');   // was '/rest/api/3/search'
       expect(options.method).toBe('POST');
     }
 

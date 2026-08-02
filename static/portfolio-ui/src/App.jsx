@@ -620,16 +620,26 @@ export default function App() {
   useEffect(() => {
     if (projects.length === 0) return;
 
-    async function fetchStats() {
+     async function fetchStats() {
       const statsMap = {};
+      let firstErr = null;
       await Promise.all(projects.map(async (p) => {
         try {
-          statsMap[p.key] = await invokeWithRetry('getProjectStats', { projectKey: p.key });
+          const s = await invokeWithRetry('getProjectStats', { projectKey: p.key });
+          statsMap[p.key] = s;
+          if (s && s._error && !firstErr) firstErr = `${p.key}: ${s._error}`;
         } catch (e) {
           statsMap[p.key] = { total: 0, done: 0, blocked: 0, inProgress: 0, error: true };
+          if (!firstErr) firstErr = `${p.key}: ${e.message}`;
         }
       }));
       setStats(statsMap);
+      // Show the real cause on screen; clear only a stale stats error so we
+      // never clobber an error raised by another tab.
+      setError((prev) => {
+        if (firstErr) return `Project stats could not be loaded — ${firstErr}`;
+        return (typeof prev === 'string' && prev.startsWith('Project stats')) ? null : prev;
+      });
     }
 
     fetchStats();
@@ -718,9 +728,9 @@ export default function App() {
     }
   };
 
-  // Click a version in that list → open the editor modal on that version.
+  // the handler the version row must invoke
   const openVersionInEditor = async (versionNumber) => {
-    const rec = versionListRecord;
+    const rec = historyRecord;                 // ← was versionListRecord (null in this flow)
     if (!rec) return;
     try {
       const v = await invoke('getBpmnDiagramVersion', { diagramId: rec.id, version: versionNumber });
@@ -732,8 +742,7 @@ export default function App() {
       setBpmnDirty(false);
       setBpmnConflict(null);
       setVersionName('');
-      setEditorOpen(true);
-      // Drives the "most recent access date" ordering next time the list opens.
+      setEditorOpen(true);                     // mounts the modal + canvas
       invoke('touchBpmnVersion', { diagramId: rec.id, version: versionNumber }).catch(() => {});
     } catch (e) {
       setError('Failed to open version: ' + e.message);
@@ -2221,7 +2230,7 @@ export default function App() {
                     <BpmnCommitHistory
                       record={historyRecord}
                       canEdit={canEditDiagram}
-                      onPickVersion={(v) => { setHistoryRecord(null); loadBpmnVersion(v); }}
+                      onPickVersion={openVersionInEditor}
                       onRevert={handleRevert}
                       onBack={() => { setHistoryRecord(null); setSelectedDiagramId(null); }}
                     />
