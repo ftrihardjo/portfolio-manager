@@ -610,3 +610,54 @@
 }
 .projects-table .project-cell { white-space: nowrap; }
 .projects-table .project-cell button { vertical-align: middle; }
+/* ── Miro-style canvas & chrome ─────────────────────────────── */
+.bpmn-modal-shell { background: #f7f8fa; }
+
+/* Dotted infinite-canvas background (Miro's signature) */
+.bpmn-canvas-wrap, [data-testid="bpmn-canvas"] {
+  background-color: #fafbfc;
+  background-image: radial-gradient(circle, #d5dae2 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+/* Floating left tool palette instead of a docked strip */
+.djs-palette {
+  top: 16px !important; left: 16px !important;
+  background: #fff; border: none !important; border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(9,30,66,.16);
+  padding: 6px; display: flex; flex-direction: column; gap: 2px;
+}
+.djs-palette .entry, .djs-palette .djs-palette-separator { border: none !important; }
+.djs-palette .entry { border-radius: 8px; width: 34px; height: 34px; }
+.djs-palette .entry:hover { background: #f1f3f5; }
+
+/* Soft shapes: lighter fills, gentle borders, drop shadows */
+.djs-element:not(.djs-connection) .djs-visual > :nth-child(1) {
+  filter: drop-shadow(0 2px 5px rgba(9,30,66,.18));
+}
+.djs-connector { stroke: #5e6c84; stroke-width: 1.5px; }
+.djs-element.selected .djs-outline {
+  stroke: #0052cc; stroke-width: 2px; rx: 8; ry: 8;   /* rounded selection like Miro */
+}
+.djs-hover .djs-outline { stroke: #4c9aff; }
+
+/* Contextual panel as a floating card (your React properties panel) */
+#js-properties-panel, .bpmn-panel {
+  background: #fff; border: 1px solid #e1e4e8 !important; border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(9,30,66,.12); padding: 12px;
+}
+
+/* Toolbar / inputs: pills + soft focus */
+.bpmn-toolbar button, .cl-actions button {
+  border-radius: 8px; border: 1px solid #dfe1e6; background: #fff;
+  transition: background-color .12s ease, transform .12s ease;
+}
+.bpmn-toolbar button:hover:not(:disabled), .cl-actions button:hover {
+  background: #f1f3f5; transform: translateY(-1px);
+}
+.bpmn-toolbar input, .bpmn-toolbar select {
+  border: 1px solid #dfe1e6; border-radius: 8px; padding: 4px 8px;
+}
+.bpmn-toolbar input:focus-visible, .bpmn-toolbar select:focus-visible {
+  outline: 2px solid #4c9aff; outline-offset: 1px; border-color: transparent;
+}

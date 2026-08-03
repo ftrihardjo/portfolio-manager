@@ -188,6 +188,19 @@ export default function BpmnDiagramView({
 
   // ★ Sub-tab: 'diagram' | 'automation'
   const [subTab, setSubTab] = useState('diagram');
+  const [compareBase, setCompareBase] = useState(null);   // version number pinned for comparison
+  const [diff, setDiff] = useState(null);
+
+  const toggleCompare = async (versionNumber) => {
+    if (compareBase === versionNumber) { setCompareBase(null); setDiff(null); return; }
+    const base = compareBase ?? viewingVersion;           // first click pins the baseline
+    if (base == null || base === versionNumber) return;
+    try {
+      const d = await invoke('diffBpmnVersions', { diagramId, baseVersion: base, targetVersion: versionNumber });
+      setCompareBase(base);
+      setDiff(d);
+    } catch (e) { setError?.(e.message); }
+  };
 
   useEffect(() => {
     if (!canvasRef.current || subTab !== 'diagram') return undefined;
@@ -437,6 +450,29 @@ export default function BpmnDiagramView({
 
           {/* Canvas + panels */}
           <div className="bpmn-canvas-col">
+            {diff && (
+              <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5 }}>
+                {/* halo outlines on changed shapes */}
+                <style>{`
+                  ${diff.added.map(e => `[data-element-id="${e.id}"] .djs-outline`).join(',')}
+                    { stroke: #36B37E !important; stroke-width: 3px !important; opacity: 1 !important; }
+                  ${diff.removed.map(e => `[data-element-id="${e.id}"] .djs-outline`).join(',')}
+                    { stroke: #DE350B !important; stroke-width: 3px !important; opacity: 1 !important; }
+                  ${diff.modified.map(e => `[data-element-id="${e.id}"] .djs-outline`).join(',')}
+                    { stroke: #FFAB00 !important; stroke-width: 3px !important; opacity: 1 !important; }
+                `}</style>
+              </div>
+            )}
+            {diff && (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12, padding: '6px 0', flexWrap: 'wrap' }}>
+                <strong>v{diff.base.version} → v{diff.target.version}:</strong>
+                <span style={{ color: '#36B37E' }}>+{diff.added.length} added</span>
+                <span style={{ color: '#DE350B' }}>−{diff.removed.length} removed</span>
+                <span style={{ color: '#974f0c' }}>~{diff.modified.length} changed</span>
+                <span style={{ color: '#666' }}>{diff.unchangedCount} unchanged</span>
+                <button onClick={() => { setDiff(null); setCompareBase(null); }} style={{ fontSize: 11 }}>Exit compare</button>
+              </div>
+            )}
             {panelSlot && createPortal(
               <>
                 {!canEdit && <ViewerPropertiesPanel instance={instance} />}

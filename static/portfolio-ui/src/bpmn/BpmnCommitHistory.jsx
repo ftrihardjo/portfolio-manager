@@ -168,6 +168,11 @@ export default function BpmnCommitHistory({ record, canEdit, onPickVersion, onRe
                   onClick={openEditor}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openEditor(); } }}
                 >
+                  <button className="cl-act" data-testid={`compare-commit-${v.version}`}
+                          onClick={() => onCompare(v.version)}
+                          title={compareBase ? `Diff against v${compareBase}` : 'Pin as comparison baseline'}>
+                    {compareBase === v.version ? 'Baseline ✓' : 'Compare'}
+                  </button>
                   <div className="cl-card-top">
                     <code className="cl-hash">{c.hash}</code>
                     <span className={`cl-badge ${isRevert ? 'revert' : 'save'}`}>
