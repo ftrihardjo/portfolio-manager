@@ -64,7 +64,10 @@ function buildCommits(rec) {
     .sort((a, b) => b.version - a.version);
 }
 
-export default function BpmnCommitHistory({ record, canEdit, onPickVersion, onRevert, onBack }) {
+export default function BpmnCommitHistory({
+  record, canEdit, onPickVersion, onRevert, onBack,
+  compareBase, onCompare,        // ← NEW
+}) {
   const [query, setQuery] = useState('');
   const [authorFilter, setAuthorFilter] = useState('');
   const [revertsOnly, setRevertsOnly] = useState(false);
@@ -168,10 +171,13 @@ export default function BpmnCommitHistory({ record, canEdit, onPickVersion, onRe
                   onClick={openEditor}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openEditor(); } }}
                 >
-                  <button className="cl-act" data-testid={`compare-commit-${v.version}`}
-                          onClick={() => onCompare(v.version)}
-                          title={compareBase ? `Diff against v${compareBase}` : 'Pin as comparison baseline'}>
-                    {compareBase === v.version ? 'Baseline ✓' : 'Compare'}
+                  <button
+                    className="cl-act"
+                    data-testid={`compare-commit-${c.version}`}
+                    onClick={(e) => { e.stopPropagation(); onCompare && onCompare(c.version); }}
+                    title={compareBase != null ? `Diff against v${compareBase}` : 'Pin as comparison baseline'}
+                  >
+                    {compareBase === c.version ? 'Baseline ✓' : 'Compare'}
                   </button>
                   <div className="cl-card-top">
                     <code className="cl-hash">{c.hash}</code>

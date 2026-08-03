@@ -583,15 +583,15 @@ resolver.define('diffBpmnVersions', async ({ payload }) => {
   const ea = parseEls(a.xml); const eb = parseEls(b.xml);
   const mapA = new Map(ea.map((e) => [e.id, e]));
   const mapB = new Map(eb.map((e) => [e.id, e]));
-  const added = eb.filter((e) => !mapA.has(e.id));
-  const removed = ea.filter((e) => !mapB.has(e.id));
+  const added    = eb.filter((e) => !mapA.has(e.id));
+  const removed  = ea.filter((e) => !mapB.has(e.id));
   const modified = eb.filter((e) => mapA.has(e.id) &&
     (mapA.get(e.id).name !== e.name || mapA.get(e.id).type !== e.type));
   return {
-    base: { version: baseVersion, name: a.name || `v${baseVersion}` },
+    base:   { version: baseVersion,   name: a.name || `v${baseVersion}` },
     target: { version: targetVersion, name: b.name || `v${targetVersion}` },
     added, removed, modified,
-    unchangedCount: eb.filter((e) => mapA.has(e.id) && !modified.includes(e)).length,
+    unchangedCount: eb.length - added.length - modified.length,
   };
 });
 
