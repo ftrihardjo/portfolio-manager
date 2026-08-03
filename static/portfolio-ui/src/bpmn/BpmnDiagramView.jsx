@@ -239,8 +239,11 @@ export default function BpmnDiagramView({
     const xmlToImport = preserveXmlRef.current || diagramXml || EMPTY_BPMN_XML;
     preserveXmlRef.current = null;
     inst.importXML(xmlToImport)
-      .then(() => { syncZoom(); syncUndo(); })
-      .catch((err) => console.error('Failed to load BPMN diagram', err));
+      .then(() => {
+        try { canvas.zoom('fit-viewport'); } catch (e) { /* ignore */ }
+        syncZoom();
+        syncUndo();
+    });
     return () => {
       inst.destroy();
       instanceRef.current = null;

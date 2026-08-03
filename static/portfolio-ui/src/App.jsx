@@ -789,6 +789,11 @@ export default function App() {
     bpmnVersionRef.current = null;   // +
     setBpmnConflict(null);           // +
   }
+  const closeBpmnEditor = () => {
+    setEditorOpen(false);
+    if (historyRecord?.id) openCommitHistory(historyRecord.id);
+    else if (selectedDiagramId) openCommitHistory(selectedDiagramId);
+  };
   // Click a diagram in the library → show its version list (NOT the editor).
   const openVersionList = async (id) => {
     try {
@@ -796,7 +801,7 @@ export default function App() {
       setVersionListRecord(rec);
       setVersionListDiagramId(id);
       setSelectedDiagramId(id);   // drives the canEditDiagram effect
-      setEditorOpen(false);
+      closeBpmnEditor();
     } catch (e) {
       setError('Failed to load versions: ' + e.message);
     }
