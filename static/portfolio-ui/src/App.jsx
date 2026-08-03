@@ -2322,17 +2322,8 @@ export default function App() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   {historyRecord ? (
                       <>
-                        <BpmnCommitHistory
-                          record={historyRecord}
-                          canEdit={canEditDiagram}
-                          onPickVersion={openVersionInEditor}
-                          onRevert={handleRevert}
-                          onBack={() => { setHistoryRecord(null); setSelectedDiagramId(null); setCompareBase(null); setVersionDiff(null); }}
-                          compareBase={compareBase}
-                          onCompare={handleCompare}
-                        />
                         {versionDiff && (
-                          <div data-testid="bpmn-diff-panel" style={{ marginTop: 12, border: '1px solid #ddd', borderRadius: 8, padding: 12, fontSize: 12, background: '#fafbfc' }}>
+                          <div data-testid="bpmn-diff-panel" style={{ marginBottom: 12, border: '1px solid #ddd', borderRadius: 8, padding: 12, fontSize: 12, background: '#fafbfc' }}>
                             <strong>v{versionDiff.base.version} → v{versionDiff.target.version}:</strong>{' '}
                             <span style={{ color: '#36B37E' }}>+{versionDiff.added.length} added</span>{' '}
                             <span style={{ color: '#DE350B' }}>−{versionDiff.removed.length} removed</span>{' '}
@@ -2344,6 +2335,15 @@ export default function App() {
                             {versionDiff.modified.length > 0 && <div>Changed: {versionDiff.modified.map(e => e.id).join(', ')}</div>}
                           </div>
                         )}
+                        <BpmnCommitHistory
+                          record={historyRecord}
+                          canEdit={canEditDiagram}
+                          onPickVersion={openVersionInEditor}
+                          onRevert={handleRevert}
+                          onBack={() => { setHistoryRecord(null); setSelectedDiagramId(null); setCompareBase(null); setVersionDiff(null); }}
+                          compareBase={compareBase}
+                          onCompare={handleCompare}
+                        />
                       </>
                     ) : (
                       <p style={{ color: '#666' }}>
