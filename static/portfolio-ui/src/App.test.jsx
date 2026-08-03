@@ -27,15 +27,26 @@ vi.mock('@forge/bridge', () => ({
 // still needs to mount without throwing.
 vi.mock('vis-network/standalone', () => ({
   Network: vi.fn().mockImplementation(function () {
-    return { on: vi.fn(), destroy: vi.fn() };
+    return {
+      on: vi.fn(),
+      destroy: vi.fn(),
+      // Camera + selection API used by the search "zoom to match" effect.
+      // jsdom can't render a real graph, so these are no-op stand-ins —
+      // the graph's rendering isn't under test, only that App mounts.
+      selectNodes: vi.fn(),
+      focus: vi.fn(),
+      fit: vi.fn(),
+      unselectAll: vi.fn(),
+    };
   }),
-  // App.jsx calls `new DataSet(items)`. Vitest's mock functions can only be
-  // used as a constructor when the implementation is a `function`, not an
-  // arrow function (arrow functions have no [[Construct]] — `new` on one
-  // throws "is not a constructor"). Must return `this`-assignable data, so
-  // wrap the array rather than returning it bare from an arrow.
+  // App.jsx calls `new DataSet(items)` and later `nodes.update(updates)`
+  // (the search-highlight restyle). Return an object exposing `update`
+  // so that path doesn't blow up; keep the raw items reachable.
   DataSet: vi.fn().mockImplementation(function (items) {
-    return items || [];
+    return {
+      update: vi.fn(),
+      _items: items || [],
+    };
   }),
 }));
 
