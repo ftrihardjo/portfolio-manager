@@ -7,6 +7,7 @@ import TokenSimulationModule from 'bpmn-js-token-simulation';
 import 'bpmn-js-token-simulation/assets/css/bpmn-js-token-simulation.css';
 import 'bpmn-font/dist/css/bpmn.css';
 import 'bpmn-js/dist/assets/diagram-js.css';
+import './miro-theme.css';
 import JiraPropertiesProvider, {
   ReadOnlyLinkedResourcesGroup,
   getLinkedResources,
