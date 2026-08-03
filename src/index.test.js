@@ -600,37 +600,18 @@ describe('BPMN diagrams (getCurrentUser, getBpmnDiagrams, getBpmnDiagram, saveBp
     ).rejects.toThrow('already the latest');
   });
 
-  // Structural diff between two stored commits. Purely additive — the
-  // ledger never changes; we only read two blobs and compare element ids.
-  resolver.define('diffBpmnVersions', async ({ payload }) => {
-    const { diagramId, baseVersion, targetVersion } = payload;
-    const parseEls = (xml) => {
-      const els = [];
-      const re = /<bpmn:(startEvent|endEvent|task|userTask|serviceTask|exclusiveGateway|parallelGateway|sequenceFlow|subProcess|intermediateThrowEvent|intermediateCatchEvent)\b[^>]*\bid="([^"]+)"(?:[^>]*\bname="([^"]*)")?/g;
-      let m;
-      while ((m = re.exec(xml || ''))) els.push({ type: m[1], id: m[2], name: m[3] || '' });
-      return els;
-    };
-    const load = async (v) => {
-      const blob = await kvs.get(bpmnVersionKey(diagramId, v));
-      if (blob) return blob;
-      const d = await kvs.get(bpmnDiagramKey(diagramId));
-      if (d && d.version === v) return { xml: d.xml, name: d.latestVersionName || `v${v}` };
-      throw new Error(`Version ${v} not found for diagram ${diagramId}`);
-    };
-    const [a, b] = await Promise.all([load(baseVersion), load(targetVersion)]);
-    const ea = parseEls(a.xml); const eb = parseEls(b.xml);
-    const mapA = new Map(ea.map((e) => [e.id, e]));
-    const mapB = new Map(eb.map((e) => [e.id, e]));
-    const added = eb.filter((e) => !mapA.has(e.id));
-    const removed = ea.filter((e) => !mapB.has(e.id));
-    const modified = eb.filter((e) => mapA.has(e.id) &&
-      (mapA.get(e.id).name !== e.name || mapA.get(e.id).type !== e.type));
-    return {
-      base: { version: baseVersion, name: a.name || `v${baseVersion}` },
-      target: { version: targetVersion, name: b.name || `v${targetVersion}` },
-      added, removed, modified,
-      unchangedCount: eb.filter((e) => mapA.has(e.id) && !modified.includes(e)).length,
-    };
+  it('diffBpmnVersions reports added/removed/modified elements', async () => {
+    mockCanEdit(true);
+    const v1 = await getResolver('saveBpmnDiagram')({ payload: { diagramId: null, name: 'd', projectKey: 'TEST',
+      xml: '<bpmn:definitions><bpmn:startEvent id="S1" name="Start"/><bpmn:task id="T1" name="Old"/></bpmn:definitions>' },
+      context: { accountId: LEAD_ACCOUNT_ID } });
+    mockCanEdit(true);
+    const v2 = await getResolver('saveBpmnDiagram')({ payload: { diagramId: v1.id, name: 'd', projectKey: 'TEST', baseVersion: 1,
+      xml: '<bpmn:definitions><bpmn:startEvent id="S1" name="Start"/><bpmn:task id="T1" name="New"/><bpmn:task id="T2" name="Extra"/></bpmn:definitions>' },
+      context: { accountId: LEAD_ACCOUNT_ID } });
+    const d = await getResolver('diffBpmnVersions')({ payload: { diagramId: v1.id, baseVersion: 1, targetVersion: 2 } });
+    expect(d.added.map(x => x.id)).toEqual(['T2']);
+    expect(d.modified.map(x => x.id)).toEqual(['T1']);
+    expect(d.removed).toEqual([]);
   });
 });
