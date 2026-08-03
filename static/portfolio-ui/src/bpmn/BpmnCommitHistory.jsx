@@ -64,10 +64,7 @@ function buildCommits(rec) {
     .sort((a, b) => b.version - a.version);
 }
 
-export default function BpmnCommitHistory({
-  record, canEdit, onPickVersion, onRevert, onBack,
-  compareBase, onCompare,        // ← NEW
-}) {
+export default function BpmnCommitHistory({ record, canEdit, onPickVersion, onRevert, onBack, compareBase, onCompare }) {
   const [query, setQuery] = useState('');
   const [authorFilter, setAuthorFilter] = useState('');
   const [revertsOnly, setRevertsOnly] = useState(false);
@@ -171,14 +168,6 @@ export default function BpmnCommitHistory({
                   onClick={openEditor}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openEditor(); } }}
                 >
-                  <button
-                    className="cl-act"
-                    data-testid={`compare-commit-${c.version}`}
-                    onClick={(e) => { e.stopPropagation(); onCompare && onCompare(c.version); }}
-                    title={compareBase != null ? `Diff against v${compareBase}` : 'Pin as comparison baseline'}
-                  >
-                    {compareBase === c.version ? 'Baseline ✓' : 'Compare'}
-                  </button>
                   <div className="cl-card-top">
                     <code className="cl-hash">{c.hash}</code>
                     <span className={`cl-badge ${isRevert ? 'revert' : 'save'}`}>
@@ -204,6 +193,14 @@ export default function BpmnCommitHistory({
                   <div className="cl-actions">
                     <button className="cl-act" onClick={(e) => { e.stopPropagation(); openEditor(); }} data-testid={`open-commit-${c.version}`}>
                       Open in editor
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); if (onCompare) onCompare(c.version); }}
+                      data-testid={`compare-commit-${c.version}`}
+                      title={compareBase && compareBase !== c.version ? `Diff v${compareBase} → v${c.version}` : 'Pin as comparison baseline'}
+                      style={{ fontSize: 11, marginLeft: 6 }}
+                    >
+                      {compareBase === c.version ? 'Baseline ✓' : 'Compare'}
                     </button>
                     {canEdit && !isHead && confirmRevert !== c.version && (
                       <button
