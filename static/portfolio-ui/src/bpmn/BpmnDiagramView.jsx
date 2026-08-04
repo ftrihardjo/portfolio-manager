@@ -182,6 +182,7 @@ export default function BpmnDiagramView({
   modelLastEditedBy, modelLastEditedByDisplay, modelLastEditedAt,
   currentAccountId,
   showNavigator: showNavigatorProp, onToggleNavigator,
+  sideCollapsed, onToggleSide,
   versions, viewingVersion, onSelectVersion, versionName, onVersionNameChange,
   diagramId, projectKey, realtimeEvent,
   onOpenVersionList,   // ★ NEW — closes the modal and shows the version list
@@ -303,6 +304,21 @@ export default function BpmnDiagramView({
     const c = instanceRef.current?.get('canvas');
     if (c) fitViewportClearOfPalette(c, canEdit);
   };
+
+  // The side column (properties panel + navigator) collapsing/expanding
+  // resizes the canvas element via CSS, but bpmn-js has no ResizeObserver
+  // of its own — without this the diagram stays framed for the old width
+  // until the user manually hits "fit to screen".
+  useEffect(() => {
+    const c = instanceRef.current?.get('canvas');
+    if (!c) return undefined;
+    const t = setTimeout(() => {
+      try { c.resized(); } catch (e) { /* */ }
+      fitViewportClearOfPalette(c, canEdit);
+    }, 180); // matches the .bpmn-modal-side transition duration
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sideCollapsed, instance]);
 
   const runFind = () => {
     const inst = instanceRef.current;
@@ -450,6 +466,14 @@ export default function BpmnDiagramView({
                 title={showNavigator ? 'Hide navigator' : 'Show navigator'} aria-pressed={showNavigator}>
                 {showNavigator ? '◧' : '◨'}
               </button>
+              {typeof onToggleSide === 'function' && (
+                <button className={`bpmn-tb-btn icon ${sideCollapsed ? 'active' : ''}`}
+                  onClick={onToggleSide} data-testid="toggle-side-panel"
+                  title={sideCollapsed ? 'Show linked resources panel' : 'Hide linked resources panel (more room for the diagram)'}
+                  aria-pressed={sideCollapsed}>
+                  {sideCollapsed ? '▶' : '◀'}
+                </button>
+              )}
             </div>
 
             <div className="bpmn-tb-group">

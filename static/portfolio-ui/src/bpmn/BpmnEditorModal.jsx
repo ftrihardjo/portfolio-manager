@@ -16,6 +16,7 @@ export default function BpmnEditorModal({
   canEdit,
   headerTitle,
   headerVersion,
+  sideCollapsed,
   children,
 }) {
   useEffect(() => {
@@ -73,7 +74,7 @@ export default function BpmnEditorModal({
 
         <div className="bpmn-modal-body">
           {/* Side column = the portal targets bpmn-js writes into. */}
-          <div className="bpmn-modal-side">
+          <div className={`bpmn-modal-side${sideCollapsed ? ' bpmn-modal-side--collapsed' : ''}`}>
             {canEdit && (
               <div id="js-properties-panel" data-testid="bpmn-properties-panel" className="bpmn-panel" />
             )}

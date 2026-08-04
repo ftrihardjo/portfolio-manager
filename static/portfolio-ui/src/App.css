@@ -402,8 +402,23 @@
   padding: 12px 16px; overflow: hidden; min-height: 0;
 }
 .bpmn-modal-side {
-  flex: 0 0 360px; display: flex; flex-direction: column;
-  gap: 12px; overflow-y: auto; min-height: 0;
+  flex: 0 0 clamp(240px, 26vw, 340px); display: flex; flex-direction: column;
+  gap: 12px; overflow-y: auto; overflow-x: hidden; min-height: 0;
+  transition: flex-basis .16s ease, opacity .16s ease;
+}
+/* .bpmn-panel/.bpmn-navigator normally carry their own fixed widths (380px /
+   300px) for use outside the modal. Inside the modal the side column is
+   itself responsive, so let its children fill whatever width it actually
+   has instead of overflowing/clipping against a stale fixed px value. */
+.bpmn-modal-side .bpmn-panel,
+.bpmn-modal-side .bpmn-navigator,
+.bpmn-modal-side #js-properties-panel {
+  width: 100%; max-width: 100%; flex: 1 1 auto; box-sizing: border-box;
+}
+.bpmn-modal-side--collapsed {
+  flex-basis: 0; width: 0; min-width: 0; opacity: 0;
+  overflow: hidden; pointer-events: none;
+  margin-right: -12px; /* cancel out .bpmn-modal-body's gap while collapsed */
 }
 .bpmn-modal-canvas-col {
   flex: 1 1 auto; display: flex; flex-direction: column;
@@ -416,6 +431,7 @@
 @media (max-width: 900px) {
   .bpmn-modal-body { flex-direction: column; overflow-y: auto; }
   .bpmn-modal-side { flex: 0 0 auto; width: 100%; max-height: 320px; }
+  .bpmn-modal-side--collapsed { max-height: 0; margin-right: 0; margin-bottom: -12px; }
 }
 
 /* ============================================================

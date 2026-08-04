@@ -471,6 +471,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showNavigator, setShowNavigator] = useState(false);
+  const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false);
     // ★ Realtime state
   const [realtimeEvent, setRealtimeEvent] = useState(null);
   const REALTIME_CHANNEL = 'bpmn-diagram-events';
@@ -2366,6 +2367,7 @@ export default function App() {
         onClose={closeBpmnEditor}
         dirty={bpmnDirty}
         canEdit={canEditDiagram}
+        sideCollapsed={sidePanelCollapsed}
         headerTitle={selectedDiagramId ? (openDiagramMeta?.name || 'Diagram') : 'New diagram'}
         headerVersion={
           selectedDiagramId
@@ -2444,6 +2446,8 @@ export default function App() {
             currentAccountId={currentUserAccountId}
             showNavigator={showNavigator}
             onToggleNavigator={() => setShowNavigator((v) => !v)}
+            sideCollapsed={sidePanelCollapsed}
+            onToggleSide={() => setSidePanelCollapsed((v) => !v)}
             versions={versions.map((v) => ({
               ...v,
               savedByDisplay: displayNameCache[v.savedBy] || v.savedByDisplay || v.savedBy,
