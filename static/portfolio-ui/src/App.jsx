@@ -2363,7 +2363,7 @@ export default function App() {
       </main>
       <BpmnEditorModal
         open={editorOpen}
-        onClose={() => setEditorOpen(false)}
+        onClose={closeBpmnEditor}
         dirty={bpmnDirty}
         canEdit={canEditDiagram}
         headerTitle={selectedDiagramId ? (openDiagramMeta?.name || 'Diagram') : 'New diagram'}
@@ -2455,7 +2455,7 @@ export default function App() {
             diagramId={selectedDiagramId}
             projectKey={openDiagramMeta?.projectKey || newDiagramProjectKey}
             realtimeEvent={realtimeEvent}
-            onOpenVersionList={() => setEditorOpen(false)}   // ★ back to the list
+            onOpenVersionList={closeBpmnEditor}   // ★ back to the list (also reloads the commit ledger)
           />
         </ErrorBoundary>
       </BpmnEditorModal>

@@ -54,7 +54,13 @@
 }
 .bpmn-tb-btn:hover { background: var(--ads-neutral); color: var(--ads-text); }
 .bpmn-tb-btn:disabled { opacity: .4; background: transparent; }
-.bpmn-tb-btn.primary { padding: 0 14px; color: #fff; }
+.bpmn-tb-btn.primary {
+  padding: 0 14px; color: #fff;
+  background: var(--ads-blue, #0052cc);
+  border: 1px solid var(--ads-blue, #0052cc);
+}
+.bpmn-tb-btn.primary:hover:not(:disabled) { background: #0747a6; border-color: #0747a6; }
+.bpmn-tb-btn.primary:disabled { background: var(--ads-blue, #0052cc); opacity: .5; }
 .bpmn-tb-spacer { flex: 1 1 auto; }
 .bpmn-find { display: flex; align-items: center; gap: 6px; }
 .bpmn-find input { height: 30px; min-width: 220px; }
@@ -175,8 +181,10 @@
 }
 .bpmn-nav-item-meta { margin-top: 4px; font-size: 11px; color: var(--ads-text-muted); }
 
-/* Tidy bpmn-js palette */
-.bpmn-canvas .djs-palette,
+/* Palette + context-pad styling lives in bpmn/miro-theme.css (single
+   source of truth — this file used to duplicate .djs-palette rules with
+   conflicting top/left offsets, which made the panel's position depend
+   on unpredictable CSS load order). */
 .bpmn-canvas .djs-context-pad {
   border-radius: var(--r-md); box-shadow: var(--shadow-2);
 }
@@ -404,7 +412,7 @@
 /* Let the canvas fill the modal instead of using its fixed clamp height. */
 .bpmn-modal-canvas-col .bpmn-editor-shell { flex: 1 1 auto; min-height: 0; }
 .bpmn-modal-canvas-col .bpmn-canvas-col { flex: 1 1 auto; min-height: 0; }
-.bpmn-modal-canvas-col .bpmn-canvas { height: auto; flex: 1 1 auto; min-height: 420px; }
+.bpmn-modal-canvas-col .bpmn-canvas { height: auto; flex: 1 1 auto; min-height: 520px; min-width: 320px; }
 @media (max-width: 900px) {
   .bpmn-modal-body { flex-direction: column; overflow-y: auto; }
   .bpmn-modal-side { flex: 0 0 auto; width: 100%; max-height: 320px; }
@@ -619,17 +627,6 @@
   background-image: radial-gradient(circle, #d5dae2 1px, transparent 1px);
   background-size: 16px 16px;
 }
-
-/* Floating left tool palette instead of a docked strip */
-.djs-palette {
-  top: 16px !important; left: 16px !important;
-  background: #fff; border: none !important; border-radius: 12px;
-  box-shadow: 0 4px 16px rgba(9,30,66,.16);
-  padding: 6px; display: flex; flex-direction: column; gap: 2px;
-}
-.djs-palette .entry, .djs-palette .djs-palette-separator { border: none !important; }
-.djs-palette .entry { border-radius: 8px; width: 34px; height: 34px; }
-.djs-palette .entry:hover { background: #f1f3f5; }
 
 /* Soft shapes: lighter fills, gentle borders, drop shadows */
 .djs-element:not(.djs-connection) .djs-visual > :nth-child(1) {
