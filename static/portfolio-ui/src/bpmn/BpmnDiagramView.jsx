@@ -50,6 +50,24 @@ function formatRelative(iso) {
   return new Date(iso).toLocaleDateString();
 }
 
+// bpmn-js's palette floats *over* the canvas (absolutely positioned), so
+// `canvas.zoom('fit-viewport')` — which has no concept of the palette —
+// happily fits diagram content right up against the left edge, tucking
+// start events / first tasks underneath it. Nudge the fitted viewbox left
+// by the palette's approximate on-screen footprint so nothing important
+// renders behind it. Only relevant when the palette exists (edit mode).
+const PALETTE_CLEARANCE_PX = 72;
+function fitViewportClearOfPalette(canvas, canEdit) {
+  try {
+    canvas.zoom('fit-viewport');
+    if (!canEdit) return;
+    const vb = canvas.viewbox();
+    if (!vb || !vb.scale) return;
+    const pad = PALETTE_CLEARANCE_PX / vb.scale;
+    canvas.viewbox({ x: vb.x - pad, y: vb.y, width: vb.width + pad, height: vb.height });
+  } catch (e) { /* ignore */ }
+}
+
 function ViewerPropertiesPanel({ instance }) {
   const [selected, setSelected] = useState(null);
   useEffect(() => {
@@ -240,7 +258,7 @@ export default function BpmnDiagramView({
     preserveXmlRef.current = null;
     inst.importXML(xmlToImport)
       .then(() => {
-        try { canvas.zoom('fit-viewport'); } catch (e) { /* ignore */ }
+        fitViewportClearOfPalette(canvas, canEdit);
         syncZoom();
         syncUndo();
     });
@@ -281,7 +299,10 @@ export default function BpmnDiagramView({
       c.zoom(next, { x: vb.x + vb.width / 2, y: vb.y + vb.height / 2 });
     } catch (e) { /* */ }
   };
-  const zoomFit = () => { try { instanceRef.current?.get('canvas').zoom('fit-viewport'); } catch (e) { /* */ } };
+  const zoomFit = () => {
+    const c = instanceRef.current?.get('canvas');
+    if (c) fitViewportClearOfPalette(c, canEdit);
+  };
 
   const runFind = () => {
     const inst = instanceRef.current;
