@@ -381,13 +381,25 @@
   overflow-y: auto !important;
   overflow-x: hidden !important;
 }
+/* Sticky fade at the bottom of the tool list — a visible cue that there's
+   more to scroll to (the pool/participant + group tools sit right at the
+   end of the list, so without this hint they're easy to miss entirely). */
+.djs-palette::after {
+  content: '';
+  position: sticky;
+  bottom: 0; left: 0; right: 0;
+  display: block;
+  height: 14px; margin-top: -14px;
+  background: linear-gradient(to bottom, rgba(255,255,255,0), #fff 85%);
+  pointer-events: none;
+}
 .djs-palette .entry {
   background: transparent !important;
   border: 1px solid transparent !important;
   border-radius: 6px !important;
-  margin: 2px !important;
-  width: 36px !important;
-  height: 36px !important;
+  margin: 1px !important;
+  width: 32px !important;
+  height: 32px !important;
   transition: all 120ms ease;
 }
 .djs-palette .entry:hover {
