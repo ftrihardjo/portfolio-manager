@@ -373,6 +373,13 @@
   padding: 6px !important;
   top: 12px !important;
   left: 12px !important;
+  /* The canvas's actual rendered height varies with viewport/toolbar rows,
+     and its ancestor (.bpmn-modal-body) clips overflow — so instead of
+     depending on the canvas always being tall enough for every tool group,
+     let the palette scroll to whatever room it actually has. */
+  max-height: calc(100% - 24px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
 }
 .djs-palette .entry {
   background: transparent !important;

@@ -182,7 +182,7 @@ export default function BpmnDiagramView({
   modelLastEditedBy, modelLastEditedByDisplay, modelLastEditedAt,
   currentAccountId,
   showNavigator: showNavigatorProp, onToggleNavigator,
-  sideCollapsed, onToggleSide,
+  sideCollapsed, onToggleSide, onSideNeeded,
   versions, viewingVersion, onSelectVersion, versionName, onVersionNameChange,
   diagramId, projectKey, realtimeEvent,
   onOpenVersionList,   // ★ NEW — closes the modal and shows the version list
@@ -319,6 +319,21 @@ export default function BpmnDiagramView({
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sideCollapsed, instance]);
+
+  // The properties panel starts collapsed to give the diagram full width.
+  // If the user selects an element (wanting to see/edit its linked Jira
+  // issue), reveal the panel automatically rather than leaving them
+  // clicking into an empty column.
+  useEffect(() => {
+    if (!instance || !canEdit || typeof onSideNeeded !== 'function') return undefined;
+    const eventBus = instance.get('eventBus');
+    const onSel = (e) => {
+      const el = e.newSelection?.[0];
+      if (el && el.type !== 'bpmn:Process' && el.type !== 'bpmn:Collaboration') onSideNeeded();
+    };
+    eventBus.on('selection.changed', onSel);
+    return () => eventBus.off('selection.changed', onSel);
+  }, [instance, canEdit, onSideNeeded]);
 
   const runFind = () => {
     const inst = instanceRef.current;

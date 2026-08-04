@@ -471,7 +471,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showNavigator, setShowNavigator] = useState(false);
-  const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false);
+  const [sidePanelCollapsed, setSidePanelCollapsed] = useState(true);
     // ★ Realtime state
   const [realtimeEvent, setRealtimeEvent] = useState(null);
   const REALTIME_CHANNEL = 'bpmn-diagram-events';
@@ -2448,6 +2448,7 @@ export default function App() {
             onToggleNavigator={() => setShowNavigator((v) => !v)}
             sideCollapsed={sidePanelCollapsed}
             onToggleSide={() => setSidePanelCollapsed((v) => !v)}
+            onSideNeeded={() => setSidePanelCollapsed(false)}
             versions={versions.map((v) => ({
               ...v,
               savedByDisplay: displayNameCache[v.savedBy] || v.savedByDisplay || v.savedBy,
