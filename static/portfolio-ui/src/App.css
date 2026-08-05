@@ -425,7 +425,7 @@
   gap: 10px; min-width: 0; min-height: 0;
 }
 /* Let the canvas fill the modal instead of using its fixed clamp height. */
-.bpmn-modal-canvas-col .bpmn-editor-shell { flex: 1 1 auto; min-height: 0; }
+.bpmn-modal-canvas-col .bpmn-editor-shell { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 .bpmn-modal-canvas-col .bpmn-canvas-col { flex: 1 1 auto; min-height: 0; }
 .bpmn-modal-canvas-col .bpmn-canvas { height: auto; flex: 1 1 auto; min-height: 460px; min-width: 320px; }
 @media (max-width: 900px) {

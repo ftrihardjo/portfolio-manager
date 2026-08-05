@@ -477,7 +477,6 @@ export default function AutomationRuleBuilder({ diagramId, projectKey, canEdit }
           <p style={{ fontSize: 14, marginBottom: 4 }}>No automation rules yet</p>
           <p style={{ fontSize: 12 }}>
             Create rules that automatically trigger actions when issues change.
-            Inspired by JSU Automation Suite's visual rule builder.
           </p>
           <button onClick={addRule} className="btn-primary" style={{ color: '#fff', marginTop: 12 }}>
             + Create Your First Rule
