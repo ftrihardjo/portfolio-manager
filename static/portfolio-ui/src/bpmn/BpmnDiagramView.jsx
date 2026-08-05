@@ -56,8 +56,8 @@ function formatRelative(iso) {
 // start events / first tasks underneath it. Nudge the fitted viewbox left
 // by the palette's approximate on-screen footprint so nothing important
 // renders behind it. Only relevant when the palette exists (edit mode).
-// (220px wide grid palette, see miro-theme.css, + padding/border/margin.)
-const PALETTE_CLEARANCE_PX = 260;
+// (180px wide grid palette, see miro-theme.css, + padding/border/margin.)
+const PALETTE_CLEARANCE_PX = 220;
 function fitViewportClearOfPalette(canvas, canEdit) {
   try {
     canvas.zoom('fit-viewport');

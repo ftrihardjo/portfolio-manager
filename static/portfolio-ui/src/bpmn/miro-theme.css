@@ -378,7 +378,7 @@
      that isn't very tall, 14 tools stacked vertically will never fully
      fit. The canvas nearly always has width to spare, so widen the
      palette and let entries wrap into a short, wide grid instead. */
-  width: 220px !important;
+  width: 180px !important;
   max-width: calc(100% - 24px) !important;
   /* Safety net for the rare case even the grid doesn't fit (e.g. a very
      short *and* narrow canvas) — scroll rather than clip silently. */
