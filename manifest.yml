@@ -20,13 +20,19 @@ modules:
     - key: automation-engine
       handler: index.automationEngine
 
-  trigger:jira:issue_created:
-    - key: issue-created-trigger
+  trigger:
+    - key: automation-trigger-created
       function: automation-engine
-
-  trigger:jira:issue_updated:
-    - key: issue-updated-trigger
+      events:
+        - avi:jira:created:issue
+      filter:
+        ignoreSelf: true          # ← critical: stops infinite loops when the engine itself edits issues
+    - key: automation-trigger-updated
       function: automation-engine
+      events:
+        - avi:jira:updated:issue
+      filter:
+        ignoreSelf: true
 
 resources:
   - key: portfolio-ui
