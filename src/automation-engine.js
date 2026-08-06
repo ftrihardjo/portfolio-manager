@@ -216,3 +216,5 @@ async function executeAction(action, issue) {
     console.error(`❌ Action ${action.type} failed for ${issueKey}:`, e.message);
   }
 }
+
+export { evaluateCondition, evaluateDecisionTable, executeAction };
