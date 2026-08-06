@@ -674,3 +674,32 @@
 .bpmn-toolbar input:focus-visible, .bpmn-toolbar select:focus-visible {
   outline: 2px solid #4c9aff; outline-offset: 1px; border-color: transparent;
 }
+
+/* ============================================================
+   Primary action buttons (Automation Rule Builder)
+   ============================================================ */
+.btn-primary {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 6px;
+  border: 1px solid var(--ads-blue, #0052cc);
+  background: var(--ads-blue, #0052cc);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color .12s ease, transform .12s ease;
+}
+.btn-primary:hover:not(:disabled) {
+  background: #0747a6;
+  border-color: #0747a6;
+  transform: translateY(-1px);
+}
+.btn-primary:focus-visible {
+  outline: 2px solid #4c9aff;
+  outline-offset: 1px;
+}
+.btn-primary:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}

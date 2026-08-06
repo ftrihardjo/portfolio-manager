@@ -70,33 +70,64 @@ function emptyDecisionRow(inputs, outputs) {
 
 // ─── Decision Table (DMN-inspired) ─────────────────────────────────
 function DecisionTableEditor({ table, onChange }) {
+  const inputs = table.inputs || [];
+  const outputs = table.outputs || [];
+  const rows = table.rows || [];
+
   const addInput = () => {
-    const col = { id: `in-${Date.now()}`, label: `Input ${table.inputs.length + 1}`, type: 'string' };
-    onChange({ ...table, inputs: [...table.inputs, col] });
+    const col = { id: `in-${Date.now()}`, label: `Input ${inputs.length + 1}`, type: 'string' };
+    onChange({ ...table, inputs: [...inputs, col] });
   };
   const addOutput = () => {
-    const col = { id: `out-${Date.now()}`, label: `Output ${table.outputs.length + 1}`, type: 'string' };
-    onChange({ ...table, outputs: [...table.outputs, col] });
+    const col = { id: `out-${Date.now()}`, label: `Output ${outputs.length + 1}`, type: 'string' };
+    onChange({ ...table, outputs: [...outputs, col] });
   };
   const addRow = () => {
-    onChange({ ...table, rows: [...table.rows, emptyDecisionRow(table.inputs, table.outputs)] });
+    onChange({ ...table, rows: [...rows, emptyDecisionRow(inputs, outputs)] });
   };
-  const removeRow = (rowId) => {
-    onChange({ ...table, rows: table.rows.filter((r) => r.id !== rowId) });
+
+  // Index-based so rows loaded from older saves (no `id`) still delete correctly.
+  const removeRow = (idx) => {
+    onChange({ ...table, rows: rows.filter((_, i) => i !== idx) });
   };
-  const updateCell = (rowId, colId, value) => {
-    onChange({
-      ...table,
-      rows: table.rows.map((r) => (r.id === rowId ? { ...r, [colId]: value } : r)),
-    });
-  };
-  const updateColLabel = (colId, label, kind) => {
+
+  // Deleting a column also strips its cells from every row, so stored
+  // rules and the execution engine never see dangling column ids.
+  const dropColumn = (colId, kind) => {
     const key = kind === 'input' ? 'inputs' : 'outputs';
     onChange({
       ...table,
-      [key]: table[key].map((c) => (c.id === colId ? { ...c, label } : c)),
+      [key]: table[key].filter((c) => c.id !== colId),
+      rows: rows.map((r) => {
+        if (!(colId in r)) return r;
+        const { [colId]: _omit, ...rest } = r;
+        return rest;
+      }),
     });
   };
+
+  const updateCell = (rowIdx, colId, value) => {
+    onChange({
+      ...table,
+      rows: rows.map((r, i) => (i === rowIdx ? { ...r, [colId]: value } : r)),
+    });
+  };
+
+  const updateColLabel = (colId, label, kind) => {
+    const key = kind === 'input' ? 'inputs' : 'outputs';
+    onChange({ ...table, [key]: table[key].map((c) => (c.id === colId ? { ...c, label } : c)) });
+  };
+
+  const colDelBtn = (colId, kind, label) => (
+    <button
+      onClick={() => dropColumn(colId, kind)}
+      style={{ background: 'none', border: 'none', color: '#DE350B', cursor: 'pointer', fontSize: 12, padding: 0, flex: '0 0 auto' }}
+      title={`Remove ${kind} column "${label}"`}
+      aria-label={`Remove ${kind} column ${label}`}
+    >
+      ✕
+    </button>
+  );
 
   return (
     <div className="decision-table-wrapper" data-testid="decision-table">
@@ -104,75 +135,89 @@ function DecisionTableEditor({ table, onChange }) {
         <thead>
           <tr>
             <th className="row-num">#</th>
-            {table.inputs.map((col) => (
+            {inputs.map((col) => (
               <th key={col.id} className="input-col">
-                <input
-                  type="text"
-                  value={col.label}
-                  onChange={(e) => updateColLabel(col.id, e.target.value, 'input')}
-                  style={{ fontWeight: 600, textTransform: 'uppercase', fontSize: 11 }}
-                  aria-label={`Input column: ${col.label}`}
-                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <input
+                    type="text"
+                    value={col.label}
+                    onChange={(e) => updateColLabel(col.id, e.target.value, 'input')}
+                    style={{ fontWeight: 600, textTransform: 'uppercase', fontSize: 11, flex: 1, minWidth: 0 }}
+                    aria-label={`Input column: ${col.label}`}
+                  />
+                  {colDelBtn(col.id, 'input', col.label)}
+                </div>
               </th>
             ))}
-            {table.outputs.map((col) => (
+            {outputs.map((col) => (
               <th key={col.id} className="output-col">
-                <input
-                  type="text"
-                  value={col.label}
-                  onChange={(e) => updateColLabel(col.id, e.target.value, 'output')}
-                  style={{ fontWeight: 600, textTransform: 'uppercase', fontSize: 11 }}
-                  aria-label={`Output column: ${col.label}`}
-                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <input
+                    type="text"
+                    value={col.label}
+                    onChange={(e) => updateColLabel(col.id, e.target.value, 'output')}
+                    style={{ fontWeight: 600, textTransform: 'uppercase', fontSize: 11, flex: 1, minWidth: 0 }}
+                    aria-label={`Output column: ${col.label}`}
+                  />
+                  {colDelBtn(col.id, 'output', col.label)}
+                </div>
               </th>
             ))}
             <th style={{ width: 36 }} />
           </tr>
         </thead>
         <tbody>
-          {table.rows.map((row, idx) => (
-            <tr key={row.id}>
+          {rows.map((row, idx) => (
+            <tr key={row.id || `row-${idx}`}>
               <td className="row-num">{idx + 1}</td>
-              {table.inputs.map((col) => (
+              {inputs.map((col) => (
                 <td key={col.id}>
                   <input
                     type="text"
                     value={row[col.id] || ''}
-                    onChange={(e) => updateCell(row.id, col.id, e.target.value)}
+                    onChange={(e) => updateCell(idx, col.id, e.target.value)}
                     placeholder="e.g. High, Bug"
                     aria-label={`${col.label} for row ${idx + 1}`}
                   />
                 </td>
               ))}
-              {table.outputs.map((col) => (
+              {outputs.map((col) => (
                 <td key={col.id}>
                   <input
                     type="text"
                     value={row[col.id] || ''}
-                    onChange={(e) => updateCell(row.id, col.id, e.target.value)}
+                    onChange={(e) => updateCell(idx, col.id, e.target.value)}
                     placeholder="e.g. P1, Assign"
                     aria-label={`${col.label} for row ${idx + 1}`}
                   />
                 </td>
               ))}
-              <td>
+              <td style={{ textAlign: 'center' }}>
                 <button
-                  onClick={() => removeRow(row.id)}
+                  onClick={() => removeRow(idx)}
                   style={{ background: 'none', border: 'none', color: '#DE350B', cursor: 'pointer', fontSize: 14 }}
-                  title="Remove row"
+                  title={`Remove row ${idx + 1}`}
                   aria-label={`Remove row ${idx + 1}`}
+                  data-testid={`remove-row-${idx}`}
                 >
                   ✕
                 </button>
               </td>
             </tr>
           ))}
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={inputs.length + outputs.length + 2} style={{ textAlign: 'center', padding: 10, color: 'var(--ads-text-muted, #6b778c)' }}>
+                No rows yet — use “+ Add Row”.
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
       <div style={{ display: 'flex', gap: 8, padding: '8px 10px', borderTop: '1px solid var(--ads-border)' }}>
-        <button onClick={addRow} style={{ fontSize: 12 }}>+ Add Row</button>
-        <button onClick={addInput} style={{ fontSize: 12 }}>+ Add Input</button>
-        <button onClick={addOutput} style={{ fontSize: 12 }}>+ Add Output</button>
+        <button onClick={addRow} style={{ fontSize: 12 }} data-testid="add-row">+ Add Row</button>
+        <button onClick={addInput} style={{ fontSize: 12 }} data-testid="add-input">+ Add Input</button>
+        <button onClick={addOutput} style={{ fontSize: 12 }} data-testid="add-output">+ Add Output</button>
       </div>
     </div>
   );
@@ -375,10 +420,10 @@ export default function AutomationRuleBuilder({ diagramId, projectKey, canEdit }
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState(null);
 
-  // Load rules on mount
+  // Load effect
   React.useEffect(() => {
-    if (!diagramId) return;
-    window.__forgeInvoke?.('getAutomationRules', { diagramId })
+    if (!diagramId || typeof window.__forgeInvoke !== 'function') return;
+    window.__forgeInvoke('getAutomationRules', { diagramId })
       .then((r) => setRules(r || []))
       .catch(() => {});
   }, [diagramId]);
@@ -414,14 +459,17 @@ export default function AutomationRuleBuilder({ diagramId, projectKey, canEdit }
     setSaved(false);
   }, []);
 
+  // handleSave
   const handleSave = async () => {
     if (!canEdit) return;
+    if (typeof window.__forgeInvoke !== 'function') {
+      setError('Forge bridge unavailable — reload the page, then save again.');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
-      await window.__forgeInvoke?.('saveAutomationRules', {
-        diagramId, projectKey, rules,
-      });
+      await window.__forgeInvoke('saveAutomationRules', { diagramId, projectKey, rules });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (e) {

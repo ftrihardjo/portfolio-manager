@@ -78,7 +78,7 @@ function LinkedResourcesGroup({ element }) {
   const ext = getLinkedResources(bo) || {};
   const issueKey = ext.issueKey || '';
   const confluencePage = ext.confluencePage || '';
-  const documentation = ext.documentation || '';
+  const description = ext.description || '';
   const set = (n, v) => setLinkedResourceProperty(modeling, moddle, element, n, v);
 
   return h('div', { style: shellStyle },
@@ -113,10 +113,10 @@ function LinkedResourcesGroup({ element }) {
       debounce: debounceFor('jiraConfluencePage'),
     }),
     h(TextAreaEntry, {
-      id: 'jiraDocumentation', element, label: 'Documentation',
-      getValue: () => documentation,
-      setValue: (v) => set('documentation', v),
-      debounce: debounceFor('jiraDocumentation'),
+      id: 'Description', element, label: 'Description',
+      getValue: () => description,
+      setValue: (v) => set('description', v),
+      debounce: debounceFor('Description'),
     }),
   );
 }
@@ -135,12 +135,12 @@ export function ReadOnlyLinkedResourcesGroup({ element }) {
   const ext = getLinkedResources(getBusinessObject(element)) || {};
   const issueKey = ext.issueKey || '';
   const confluencePage = ext.confluencePage || '';
-  const documentation = ext.documentation || '';
+  const description = ext.description || '';
   return rce('div', { style: shellStyle },
     rce('h3', { style: headStyle }, 'Linked Resources'),
     rce(Field, { label: 'Issue Key', value: issueKey }),
     rce(Field, { label: 'Confluence URL', value: confluencePage, link: true }),
-    rce(Field, { label: 'Documentation', value: documentation, multiline: true }),
+    rce(Field, { label: 'Description', value: description, multiline: true }),
     rce('div', { style: { display: 'flex', gap: '6px', marginTop: '8px' } },
       rce('button', {
         type: 'button',

@@ -105,7 +105,7 @@ function LinkedResourcesNavigator({ instance, onNavigate }) {
           type: el.type,
           issueKey: ext.issueKey || '',
           confluencePage: ext.confluencePage || '',
-          documentation: ext.documentation || '',
+          description: ext.description || '',
         });
       });
       found.sort((a, b) => a.id.localeCompare(b.id));
