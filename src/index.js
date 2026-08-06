@@ -2,6 +2,7 @@ import Resolver from '@forge/resolver';
 import api, { route } from '@forge/api';
 import { kvs } from '@forge/kvs';
 import { publish } from '@forge/realtime';
+import { automationEngine } from './automation-engine';
 
 const resolver = new Resolver();
 
@@ -47,6 +48,10 @@ async function countJql(jql) {
   const n = r?.count ?? r?.total;          // approximate-count returns { count }; /search returns { total }
   return typeof n === 'number' ? n : 0;
 }
+
+resolver.define('getAutomationEngine', async () => {
+  return { message: "Engine is running. Handlers are exported via index.automationEngine" };
+});
 
 resolver.define('getProjectStats', async ({ payload }) => {
   const { projectKey } = payload;
@@ -610,3 +615,4 @@ resolver.define('diffBpmnVersions', async ({ payload }) => {
 });
 
 export const handler = resolver.getDefinitions();
+export { automationEngine };

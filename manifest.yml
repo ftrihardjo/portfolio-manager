@@ -17,6 +17,16 @@ modules:
   function:
     - key: resolver
       handler: index.handler
+    - key: automation-engine
+      handler: index.automationEngine
+
+  trigger:jira:issue_created:
+    - key: issue-created-trigger
+      function: automation-engine
+
+  trigger:jira:issue_updated:
+    - key: issue-updated-trigger
+      function: automation-engine
 
 resources:
   - key: portfolio-ui
