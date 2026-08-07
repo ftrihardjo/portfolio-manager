@@ -4,14 +4,31 @@ import { kvs } from '@forge/kvs';
 
 // ─── Mock Forge APIs ───────────────────────────────────────────────────────
 jest.mock('@forge/api', () => {
-  const mockRequestJira = jest.fn().mockResolvedValue({
-    ok: true,
-    json: async () => ({ transitions: [{ id: '21', name: 'In Progress' }] }),
+  const mockRequestJira = jest.fn().mockImplementation((url) => {
+    if (String(url).includes('/transitions')) {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ transitions: [{ id: '21', name: 'In Progress' }] }),
+      });
+    }
+    return Promise.resolve({
+      ok: true,
+      json: async () => ({
+        key: 'TEST-123',
+        fields: {
+          project: { key: 'TEST' },
+          status: { name: 'To Do' },
+          priority: { name: 'High' },
+          issuetype: { name: 'Bug' },
+          labels: ['urgent'],
+        },
+      }),
+    });
   });
 
   return {
-    __esModule: true, // Required for Jest to recognize default exports
-    default: {        // This maps to the `api` default import
+    __esModule: true,
+    default: {
       asApp: jest.fn(() => ({ requestJira: mockRequestJira })),
       asUser: jest.fn(() => ({ requestJira: mockRequestJira })),
     },
@@ -89,6 +106,32 @@ describe('Automation Engine', () => {
 
   // ─── Integration Test: Main Engine Execution ─────────────────────────────
   describe('automationEngine', () => {
+    test('classifies a priority-field changelog as priority_changed and fires a matching rule', async () => {
+      kvs.get.mockImplementation((key) => {
+        if (key === 'bpmn:index') return [{ id: 'diagram-1', projectKey: 'TEST' }];
+        if (key === 'automation:rules:diagram-1') return [{
+          id: 'rule-2',
+          enabled: true,
+          trigger: 'priority_changed',
+          conditions: [],
+          actions: [{ type: 'add_comment', config: { value: 'Priority changed' } }],
+        }];
+        return null;
+      });
+
+      const event = {
+        eventType: 'avi:jira:updated:issue',
+        issue: mockIssue,
+        changelog: { items: [{ field: 'priority', fromString: 'Medium', toString: 'High' }] },
+      };
+
+      await automationEngine(event);
+
+      expect(api.asApp().requestJira).toHaveBeenCalledWith(
+        expect.stringContaining('/rest/api/3/issue/TEST-123/comment'),
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
     test('executes transition action when issue_created trigger fires', async () => {
       // Mock KVS to return an active rule
       kvs.get.mockImplementation((key) => {
@@ -104,7 +147,7 @@ describe('Automation Engine', () => {
       });
 
       const event = {
-        webhookEvent: 'jira:issue_created',
+        eventType: 'avi:jira:created:issue',
         issue: mockIssue,
       };
 

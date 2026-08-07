@@ -5,6 +5,7 @@ const TRIGGER_TYPES = [
   { value: 'issue_created', label: 'Issue Created' },
   { value: 'issue_updated', label: 'Issue Updated' },
   { value: 'issue_transitioned', label: 'Issue Transitioned' },
+  { value: 'priority_changed', label: 'Priority Changed' },
   { value: 'issue_assigned', label: 'Issue Assigned' },
   { value: 'comment_added', label: 'Comment Added' },
   { value: 'due_date_reached', label: 'Due Date Reached' },

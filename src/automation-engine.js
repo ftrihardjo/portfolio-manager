@@ -4,21 +4,32 @@ import { kvs } from '@forge/kvs';
 export const automationEngine = async (event) => {
   console.log('🚀 Automation Engine Triggered:', JSON.stringify(event));
 
-  const issue = event.issue;
-  if (!issue || !issue.fields) return;
+  const stubIssue = event.issue;
+  if (!stubIssue || !stubIssue.fields) return;
 
-  const projectKey = issue.fields.project?.key;
+  const projectKey = stubIssue.fields.project?.key;
   if (!projectKey) return;
+
+  // The native Forge trigger payload only includes a minimal field set
+  // (summary, status, project, people, dates) — it does NOT include
+  // priority, labels, assignee, or components. Re-fetch the full issue
+  // before evaluating any rule conditions or decision tables.
+  const issueRes = await api.asApp().requestJira(
+    route`/rest/api/3/issue/${stubIssue.key}?fields=summary,status,priority,issuetype,assignee,labels,components,project`
+  );
+  const issue = await issueRes.json();
+  if (!issue || !issue.fields) return;
 
   // 1. Determine the specific trigger type from the webhook event
   let triggerType = 'issue_updated';
-  if (event.webhookEvent === 'jira:issue_created') {
+  if (event.eventType === 'avi:jira:created:issue') {
     triggerType = 'issue_created';
-  } else if (event.webhookEvent === 'jira:issue_updated') {
+  } else if (event.eventType === 'avi:jira:updated:issue') {
     const items = event.changelog?.items || [];
     if (items.some(item => item.field === 'status')) triggerType = 'issue_transitioned';
-    if (items.some(item => item.field === 'comment')) triggerType = 'comment_added';
-    if (items.some(item => item.field === 'assignee')) triggerType = 'issue_assigned';
+    else if (items.some(item => item.field === 'priority')) triggerType = 'priority_changed';
+    else if (items.some(item => item.field === 'comment')) triggerType = 'comment_added';
+    else if (items.some(item => item.field === 'assignee')) triggerType = 'issue_assigned';
   }
 
   // 2. Fetch all active diagrams for this project from the central index
