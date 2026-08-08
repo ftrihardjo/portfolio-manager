@@ -5,12 +5,19 @@ import { kvs } from '@forge/kvs';
 // ─── Mock Forge APIs ───────────────────────────────────────────────────────
 jest.mock('@forge/api', () => {
   const mockRequestJira = jest.fn().mockImplementation((url) => {
+    if (String(url).includes('/myself')) {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ accountId: 'app:fake-service-account-id' }),
+      });
+    }
     if (String(url).includes('/transitions')) {
       return Promise.resolve({
         ok: true,
         json: async () => ({ transitions: [{ id: '21', name: 'In Progress' }] }),
       });
     }
+    // Full issue re-fetch (the trigger payload only has a minimal field set)
     return Promise.resolve({
       ok: true,
       json: async () => ({
@@ -27,8 +34,8 @@ jest.mock('@forge/api', () => {
   });
 
   return {
-    __esModule: true,
-    default: {
+    __esModule: true, // Required for Jest to recognize default exports
+    default: {        // This maps to the `api` default import
       asApp: jest.fn(() => ({ requestJira: mockRequestJira })),
       asUser: jest.fn(() => ({ requestJira: mockRequestJira })),
     },
@@ -120,6 +127,34 @@ describe('Automation Engine', () => {
 
   // ─── Integration Test: Main Engine Execution ─────────────────────────────
   describe('automationEngine', () => {
+    test('executes transition action when issue_created trigger fires', async () => {
+      // Mock KVS to return an active rule
+      kvs.get.mockImplementation((key) => {
+        if (key === 'bpmn:index') return [{ id: 'diagram-1', projectKey: 'TEST' }];
+        if (key === 'automation:rules:diagram-1') return [{
+          id: 'rule-1',
+          enabled: true,
+          trigger: 'issue_created',
+          conditions: [{ field: 'priority', operator: 'equals', value: 'High' }],
+          actions: [{ type: 'transition', config: { value: 'In Progress' } }],
+        }];
+        return null;
+      });
+
+      const event = {
+        eventType: 'avi:jira:created:issue',
+        issue: mockIssue,
+      };
+
+      await automationEngine(event);
+
+      // Verify Jira API was called to get transitions
+      expect(api.asApp().requestJira).toHaveBeenCalledWith(
+        expect.stringContaining('/rest/api/3/issue/TEST-123/transitions'),
+        expect.objectContaining({ method: 'POST' }) // The actual transition call
+      );
+    });
+
     test('classifies a priority-field changelog as priority_changed and fires a matching rule', async () => {
       kvs.get.mockImplementation((key) => {
         if (key === 'bpmn:index') return [{ id: 'diagram-1', projectKey: 'TEST' }];
@@ -146,31 +181,35 @@ describe('Automation Engine', () => {
         expect.objectContaining({ method: 'POST' })
       );
     });
-    test('executes transition action when issue_created trigger fires', async () => {
-      // Mock KVS to return an active rule
+
+    test('skips events caused by the app\'s own account to prevent infinite loops', async () => {
       kvs.get.mockImplementation((key) => {
         if (key === 'bpmn:index') return [{ id: 'diagram-1', projectKey: 'TEST' }];
         if (key === 'automation:rules:diagram-1') return [{
-          id: 'rule-1',
+          id: 'rule-3',
           enabled: true,
-          trigger: 'issue_created',
-          conditions: [{ field: 'priority', operator: 'equals', value: 'High' }],
+          trigger: 'issue_transitioned',
+          conditions: [],
           actions: [{ type: 'transition', config: { value: 'In Progress' } }],
         }];
         return null;
       });
 
       const event = {
-        eventType: 'avi:jira:created:issue',
+        eventType: 'avi:jira:updated:issue',
         issue: mockIssue,
+        atlassianId: 'app:fake-service-account-id', // matches the /myself mock — this IS the app
+        changelog: { items: [{ field: 'status', fromString: 'To Do', toString: 'In Progress' }] },
       };
 
       await automationEngine(event);
 
-      // Verify Jira API was called to get transitions
-      expect(api.asApp().requestJira).toHaveBeenCalledWith(
-        expect.stringContaining('/rest/api/3/issue/TEST-123/transitions'),
-        expect.objectContaining({ method: 'POST' }) // The actual transition call
+      // No rule action should have executed — not the transition endpoint, not anything else
+      // action-related. (appAccountId is cached at module scope across tests, so we can't
+      // assert an exact call count here — but we can assert no action was taken.)
+      expect(api.asApp().requestJira).not.toHaveBeenCalledWith(
+        expect.stringContaining('/transitions'),
+        expect.objectContaining({ method: 'POST' })
       );
     });
   });

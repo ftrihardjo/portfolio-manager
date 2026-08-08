@@ -1,8 +1,33 @@
 import api, { route } from '@forge/api';
 import { kvs } from '@forge/kvs';
 
+// Cached per warm lambda instance — avoids an extra API call on every invocation.
+let appAccountId = null;
+async function getAppAccountId() {
+  if (appAccountId) return appAccountId;
+  try {
+    const res = await api.asApp().requestJira(route`/rest/api/3/myself`);
+    const me = await res.json();
+    appAccountId = me.accountId || null;
+  } catch (e) {
+    console.error('⚠️ Could not resolve app account identity:', e.message);
+  }
+  return appAccountId;
+}
+
 export const automationEngine = async (event) => {
   console.log('🚀 Automation Engine Triggered:', JSON.stringify(event));
+
+  // Guard against infinite loops: skip events caused by the app's own actions.
+  // manifest.yml sets `ignoreSelf: true`, but observed behavior shows Forge still
+  // dispatches these events to the trigger — so we check explicitly instead of
+  // relying on that filter or on `event.selfGenerated` (also seen to be unreliable).
+  const actorId = event.atlassianId || event.associatedUsers?.[0]?.accountId;
+  const myId = await getAppAccountId();
+  if (myId && actorId === myId) {
+    console.log('⏭️ Skipping self-generated event to avoid loop:', actorId);
+    return;
+  }
 
   const stubIssue = event.issue;
   if (!stubIssue || !stubIssue.fields) return;
