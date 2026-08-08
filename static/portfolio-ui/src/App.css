@@ -703,3 +703,16 @@
   opacity: .55;
   cursor: not-allowed;
 }
+.plg-nudge-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(90deg, #e3fcef, #f4f5f7);
+  border: 1px solid #00875a;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 24px;
+  box-shadow: 0 4px 12px rgba(0, 135, 90, 0.1);
+}
+.plg-nudge-banner strong { color: #006644; font-size: 14px; }
+.plg-nudge-banner p { margin: 4px 0 0; font-size: 13px; color: #172b4d; }

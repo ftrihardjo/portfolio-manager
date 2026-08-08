@@ -251,6 +251,11 @@ async function executeAction(action, issue) {
   } catch (e) {
     console.error(`❌ Action ${action.type} failed for ${issueKey}:`, e.message);
   }
+  // 🚀 PLG VALUE TRACKING
+  try {
+    const execCount = (await kvs.get('plg:actions_executed')) || 0;
+    await kvs.set('plg:actions_executed', execCount + 1);
+  } catch (e) { /* silent fail for analytics */ }
 }
 
 export { evaluateCondition, evaluateDecisionTable, executeAction };

@@ -18,6 +18,7 @@ import 'bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css';
 import './App.css';
 // Add at the top of App.jsx, after existing imports:
 import { realtime } from '@forge/bridge';
+import { PLG, Events } from './analytics';
 const TABS = ['projects', 'dependencies', 'roadmap', 'summary', 'bpmn'];
 const TAB_LABELS = { bpmn: 'BPMN' };
 // Ships inside the component so it can't be lost to a stale CSS file.
@@ -523,6 +524,7 @@ export default function App() {
       }
       setError(e.message);
     }
+    PLG.track(Events.DIAGRAM_REVERTED, { target_version: version });
   };
   // ★ Display name cache
   const [displayNameCache, setDisplayNameCache] = useState({});
@@ -829,6 +831,7 @@ export default function App() {
     }
   };
   const saveBpmnDiagram = async (xml) => {
+    const isFirstDiagram = !selectedDiagramId && (bpmnDiagrams || []).length === 0;
     try {
       const payload = {
         diagramId: selectedDiagramId,
@@ -855,8 +858,19 @@ export default function App() {
       if (rec.lastEditedBy) {
         await resolveDisplayNames([rec.lastEditedBy]);
       }
+      // 🚀 PLG TRACKING
+      if (isFirstDiagram) {
+        PLG.track(Events.FIRST_DIAGRAM_SAVED, { projectKey: rec.projectKey });
+      } else {
+        PLG.track(Events.DIAGRAM_SAVED, { version: rec.version });
+      }
+
+      if (payload.message && payload.message.trim()) {
+        PLG.track(Events.COMMIT_LEDGER_USED);
+      }
     } catch (e) {
       if (e.message && e.message.startsWith('Conflict:')) {
+        PLG.track(Events.SAVE_CONFLICT);
         setBpmnConflict({
           lastEditedBy: e.message.match(/saved by (.+?) at/)?.[1] || 'another user',
           updatedAt: e.message.match(/at (.+?)\./)?.[1] || new Date().toISOString(),
@@ -1110,6 +1124,34 @@ export default function App() {
     }
   }, [filteredDependencies.length, activeTab, loading]);
 
+  const [nudge, setNudge] = useState(null);
+  // ─── PLG state ─────────────────────────────────────────────────────
+  const [currentUser, setCurrentUser] = useState(null);
+  const [automationRulesCount, setAutomationRulesCount] = useState(0);
+
+  // Identify the user once, for cohort analytics
+  useEffect(() => {
+    invoke('getCurrentUser').then(setCurrentUser).catch(() => {});
+  }, []);
+
+  // Keep the rule count fresh for the nudge engine
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const diagrams = (await invoke('getBpmnDiagrams')) || [];
+        const ruleSets = await Promise.all(
+          diagrams.map((d) =>
+            invoke('getAutomationRules', { diagramId: d.id }).catch(() => [])
+          )
+        );
+        if (!cancelled) {
+          setAutomationRulesCount(ruleSets.reduce((n, r) => n + (r?.length || 0), 0));
+        }
+      } catch { /* analytics must never break the UI */ }
+    })();
+    return () => { cancelled = true; };
+  }, [bpmnDiagrams]);
   const circularDependencyPath = useMemo(() => {
     // Build the graph using only `outward` links. Each real link between two
     // fetched issues appears TWICE in the raw data — once as `outward` on
@@ -1556,7 +1598,7 @@ export default function App() {
       </div>
 
       <header className="app-header">
-        <h1>BPMN & Portfolio Manager</h1>
+        <h1>BPMN, Workflow Automation & Portfolio Manager</h1>
         <nav className="tabs" role="tablist" aria-label="Portfolio Views">
           {TABS.map((tab, idx) => (
             <button
@@ -2360,6 +2402,21 @@ export default function App() {
               </div>
             )}
           </section>
+        )}
+        {nudge && (
+          <div className="plg-nudge-banner">
+            <div>
+              <strong>{nudge.title}</strong>
+              <p>{nudge.message}</p>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn-primary" onClick={nudge.action}>{nudge.cta}</button>
+              <button onClick={() => {
+                localStorage.setItem(`nudge_${nudge.type}_dismissed`, 'true');
+                setNudge(null);
+              }}>Dismiss</button>
+            </div>
+          </div>
         )}
       </main>
       <BpmnEditorModal

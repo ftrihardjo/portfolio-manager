@@ -53,6 +53,11 @@ resolver.define('getAutomationEngine', async () => {
   return { message: "Engine is running. Handlers are exported via index.automationEngine" };
 });
 
+resolver.define('getPlgMetrics', async () => {
+  const actionsExecuted = (await kvs.get('plg:actions_executed')) || 0;
+  return { actionsExecuted, hoursSaved: Math.round(actionsExecuted * 0.05) }; // ~3 mins per action
+});
+
 resolver.define('getProjectStats', async ({ payload }) => {
   const { projectKey } = payload;
   const base = `project = "${projectKey}"`;

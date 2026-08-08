@@ -48,3 +48,5 @@ permissions:
     fetch:
       backend:
         - address: "*.atlassian.net"
+      client:
+        - address: "*.google-analytics.com"
