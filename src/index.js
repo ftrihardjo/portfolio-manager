@@ -49,30 +49,6 @@ async function countJql(jql) {
   return typeof n === 'number' ? n : 0;
 }
 
-const GA_MEASUREMENT_ID = 'G-9FFJELQ6BR';
-const GA_API_SECRET = 't_irWikPRiK4b7-hMnWgMw';
-
-resolver.define('trackPlgEvent', async ({ payload, context }) => {
-  const { name, params = {}, clientId } = payload;
-  try {
-    await fetch(
-      `https://www.google-analytics.com/mp/collect?measurement_id=${GA_MEASUREMENT_ID}&api_secret=${GA_API_SECRET}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          client_id: clientId || 'unknown',
-          events: [{
-            name,
-            params: { ...params, actor: context?.accountId, debug_mode: true },
-          }],
-        }),
-      }
-    );
-  } catch (e) { /* analytics must never break the app */ }
-  return { ok: true };
-});
-
 resolver.define('getAutomationEngine', async () => {
   return { message: "Engine is running. Handlers are exported via index.automationEngine" };
 });

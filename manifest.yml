@@ -26,7 +26,7 @@ modules:
       events:
         - avi:jira:created:issue
       filter:
-        ignoreSelf: true          # ← critical: stops infinite loops when the engine itself edits issues
+        ignoreSelf: true # ← critical: stops infinite loops when the engine itself edits issues
     - key: automation-trigger-updated
       function: automation-engine
       events:
@@ -46,11 +46,10 @@ permissions:
     - storage:app
   external:
     scripts:
-      - address: "*.googletagmanager.com"
+      - address: "https://www.googletagmanager.com/gtag/js"
+        category: analytics
     fetch:
-      backend:
-        - address: "*.atlassian.net"
-        - address: "*.atlassian.net"
-        - address: "*.google-analytics.com"
       client:
-        - address: "*.google-analytics.com"
+        - "https://www.google-analytics.com"
+    images:
+      - "https://www.google-analytics.com"

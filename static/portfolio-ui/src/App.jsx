@@ -18,7 +18,6 @@ import 'bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css';
 import './App.css';
 // Add at the top of App.jsx, after existing imports:
 import { realtime } from '@forge/bridge';
-import { PLG, Events } from './analytics';
 const TABS = ['projects', 'dependencies', 'roadmap', 'summary', 'bpmn'];
 const TAB_LABELS = { bpmn: 'BPMN' };
 // Ships inside the component so it can't be lost to a stale CSS file.
@@ -1123,51 +1122,6 @@ export default function App() {
       setSrAnnouncement(`Showing ${filteredDependencies.length} dependencies`);
     }
   }, [filteredDependencies.length, activeTab, loading]);
-
-  const [nudge, setNudge] = useState(null);
-  // ─── PLG state ─────────────────────────────────────────────────────
-  const [currentUser, setCurrentUser] = useState(null);
-  const [automationRulesCount, setAutomationRulesCount] = useState(0);
-
-  // Identify the user once, for cohort analytics (async-safe for test mocks)
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const user = await invoke('getCurrentUser');
-        if (!cancelled && user) setCurrentUser(user);
-      } catch (e) {
-        // silent fail for analytics
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  // Keep the rule count fresh for the nudge engine (async-safe)
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const diagrams = (await invoke('getBpmnDiagrams')) || [];
-        const ruleSets = await Promise.all(
-          diagrams.map(async (d) => {
-            try {
-              const rules = await invoke('getAutomationRules', { diagramId: d.id });
-              return rules || [];
-            } catch {
-              return [];
-            }
-          })
-        );
-        if (!cancelled) {
-          setAutomationRulesCount(ruleSets.reduce((n, r) => n + (r?.length || 0), 0));
-        }
-      } catch {
-        // analytics must never break the UI
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [bpmnDiagrams]);
   const circularDependencyPath = useMemo(() => {
     // Build the graph using only `outward` links. Each real link between two
     // fetched issues appears TWICE in the raw data — once as `outward` on
@@ -2418,21 +2372,6 @@ export default function App() {
               </div>
             )}
           </section>
-        )}
-        {nudge && (
-          <div className="plg-nudge-banner">
-            <div>
-              <strong>{nudge.title}</strong>
-              <p>{nudge.message}</p>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn-primary" onClick={nudge.action}>{nudge.cta}</button>
-              <button onClick={() => {
-                localStorage.setItem(`nudge_${nudge.type}_dismissed`, 'true');
-                setNudge(null);
-              }}>Dismiss</button>
-            </div>
-          </div>
         )}
       </main>
       <BpmnEditorModal
