@@ -137,9 +137,9 @@ function evaluateDecisionTable(table, issue) {
       const outVal = row[output.id];
       if (outVal && output.label.toLowerCase().includes('action')) {
         if (outVal.toLowerCase().startsWith('transition:')) {
-          actions.push({ type: 'transition', config: { value: outVal.split(':')[1].trim() } });
+          actions.push({ type: 'transition', config: { value: outVal.slice(outVal.indexOf(':') + 1).trim() } });
         } else if (outVal.toLowerCase().startsWith('assign:')) {
-          actions.push({ type: 'assign_to', config: { value: outVal.split(':')[1].trim() } });
+          actions.push({ type: 'assign_to', config: { value: outVal.slice(outVal.indexOf(':') + 1).trim() } });
         } else {
           actions.push({ type: 'add_comment', config: { value: outVal } });
         }

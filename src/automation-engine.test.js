@@ -102,6 +102,20 @@ describe('Automation Engine', () => {
       const actions = evaluateDecisionTable(dmnTable, lowIssue);
       expect(actions).toHaveLength(0);
     });
+
+    test('preserves full accountId (with its own colon) in an assign: action', () => {
+      const table = {
+        hitPolicy: 'FIRST',
+        inputs: [{ id: 'in1', label: 'Priority' }],
+        outputs: [{ id: 'out1', label: 'Action' }],
+        rows: [{ in1: 'Low', out1: 'assign: 712020:cf58f049-da15-45e2-8b6d-28a64ee4b9b5' }],
+      };
+      const lowPriorityIssue = { fields: { ...mockIssue.fields, priority: { name: 'Low' } } };
+      const actions = evaluateDecisionTable(table, lowPriorityIssue);
+      expect(actions).toEqual([
+        { type: 'assign_to', config: { value: '712020:cf58f049-da15-45e2-8b6d-28a64ee4b9b5' } },
+      ]);
+    });
   });
 
   // ─── Integration Test: Main Engine Execution ─────────────────────────────
