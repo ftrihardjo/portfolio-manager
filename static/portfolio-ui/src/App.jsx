@@ -1129,26 +1129,42 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [automationRulesCount, setAutomationRulesCount] = useState(0);
 
-  // Identify the user once, for cohort analytics
+  // Identify the user once, for cohort analytics (async-safe for test mocks)
   useEffect(() => {
-    invoke('getCurrentUser').then(setCurrentUser).catch(() => {});
+    let cancelled = false;
+    (async () => {
+      try {
+        const user = await invoke('getCurrentUser');
+        if (!cancelled && user) setCurrentUser(user);
+      } catch (e) {
+        // silent fail for analytics
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
-  // Keep the rule count fresh for the nudge engine
+  // Keep the rule count fresh for the nudge engine (async-safe)
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const diagrams = (await invoke('getBpmnDiagrams')) || [];
         const ruleSets = await Promise.all(
-          diagrams.map((d) =>
-            invoke('getAutomationRules', { diagramId: d.id }).catch(() => [])
-          )
+          diagrams.map(async (d) => {
+            try {
+              const rules = await invoke('getAutomationRules', { diagramId: d.id });
+              return rules || [];
+            } catch {
+              return [];
+            }
+          })
         );
         if (!cancelled) {
           setAutomationRulesCount(ruleSets.reduce((n, r) => n + (r?.length || 0), 0));
         }
-      } catch { /* analytics must never break the UI */ }
+      } catch {
+        // analytics must never break the UI
+      }
     })();
     return () => { cancelled = true; };
   }, [bpmnDiagrams]);
