@@ -1,13 +1,13 @@
-// static/portfolio-ui/src/analytics.js
-import ReactGA from 'react-ga4';
+import { invoke } from '@forge/bridge';
 
-// ⚠️ Vite build: env vars come from import.meta.env and MUST be VITE_-prefixed.
-// Referencing process.env here crashes the browser bundle (blank page).
-const GA_ID = import.meta.env.VITE_GA_MEASUREMENT_ID;
-
-if (GA_ID) {
-  ReactGA.initialize(GA_ID);
+let clientId = localStorage.getItem('plg_cid');
+if (!clientId) {
+  clientId = `${Date.now()}.${Math.random().toString(36).slice(2, 10)}`;
+  localStorage.setItem('plg_cid', clientId);
 }
+
+const send = (name, params) =>
+  invoke('trackPlgEvent', { name, params, clientId }).catch(() => {});
 
 export const Events = {
   FIRST_DIAGRAM_SAVED: 'activation_first_diagram_saved',
@@ -26,29 +26,10 @@ export const PLG = {
   identify: (user) => {
     if (!user || identifiedUser === user.accountId) return;
     identifiedUser = user.accountId;
-    if (!GA_ID) return;
-    ReactGA.set({
-      user_id: user.accountId,
-      user_properties: {
-        account_type: user.accountType || 'unknown',
-        is_admin: !!user.isAdmin,
-        locale: user.locale,
-        timezone: user.timezone,
-      },
+    send('plg_identify', {
+      account_type: user.accountType || 'unknown',
+      is_admin: !!user.isAdmin,
     });
   },
-
-  track: (eventName, properties = {}) => {
-    if (import.meta.env.DEV) {
-      console.log(`[PLG Track] ${eventName}`, properties);
-    }
-    if (!GA_ID) return; // not configured → skip GA, keep dev logs
-    ReactGA.event({
-      category: properties.category || 'PLG',
-      action: eventName,
-      label: properties.label || '',
-      value: properties.value || 1,
-      ...properties,
-    });
-  },
+  track: (eventName, properties = {}) => send(eventName, properties),
 };

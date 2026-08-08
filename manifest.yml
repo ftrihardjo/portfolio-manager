@@ -45,8 +45,12 @@ permissions:
     - write:jira-work
     - storage:app
   external:
+    scripts:
+      - address: "*.googletagmanager.com"
     fetch:
       backend:
         - address: "*.atlassian.net"
+        - address: "*.atlassian.net"
+        - address: "*.google-analytics.com"
       client:
         - address: "*.google-analytics.com"
