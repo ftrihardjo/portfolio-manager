@@ -123,6 +123,36 @@ describe('Automation Engine', () => {
         { type: 'assign_to', config: { value: '712020:cf58f049-da15-45e2-8b6d-28a64ee4b9b5' } },
       ]);
     });
+
+    // Mirrors the real "Auto-triage by priority" rule's three rows — replaces having
+    // to manually create a PAY-x issue at each priority level and check Jira by hand.
+    describe('Auto-triage by priority rows (real rule config)', () => {
+      const autoTriageTable = {
+        hitPolicy: 'FIRST',
+        inputs: [{ id: 'in1', label: 'PRIORITY' }],
+        outputs: [{ id: 'out1', label: 'ACTION' }],
+        rows: [
+          { in1: 'High', out1: 'transition: In Progress' },
+          { in1: 'Medium', out1: 'Needs Triage - please review' },
+          { in1: 'Low', out1: 'assign: 712020:cf58f049-da15-45e2-8b6d-28a64ee4b9b5' },
+        ],
+      };
+
+      test.each([
+        ['High', 'transition', { value: 'In Progress' }],
+        ['Medium', 'add_comment', { value: 'Needs Triage - please review' }],
+        ['Low', 'assign_to', { value: '712020:cf58f049-da15-45e2-8b6d-28a64ee4b9b5' }],
+      ])('Priority=%s produces %s action', (priorityName, expectedType, expectedConfig) => {
+        const issue = { fields: { ...mockIssue.fields, priority: { name: priorityName } } };
+        const actions = evaluateDecisionTable(autoTriageTable, issue);
+        expect(actions).toEqual([{ type: expectedType, config: expectedConfig }]);
+      });
+
+      test('Priority=Lowest (Case 4: no matching row) produces zero actions', () => {
+        const issue = { fields: { ...mockIssue.fields, priority: { name: 'Lowest' } } };
+        expect(evaluateDecisionTable(autoTriageTable, issue)).toEqual([]);
+      });
+    });
   });
 
   // ─── Integration Test: Main Engine Execution ─────────────────────────────
@@ -209,6 +239,74 @@ describe('Automation Engine', () => {
       // assert an exact call count here — but we can assert no action was taken.)
       expect(api.asApp().requestJira).not.toHaveBeenCalledWith(
         expect.stringContaining('/transitions'),
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+
+    test('Case 5: issue in a project with no matching diagram triggers zero rule actions', async () => {
+      kvs.get.mockImplementation((key) => {
+        // Only a PAY-equivalent project has a diagram indexed — TEST does not.
+        if (key === 'bpmn:index') return [{ id: 'diagram-1', projectKey: 'OTHER_PROJECT' }];
+        return null;
+      });
+
+      const otherProjectIssue = { ...mockIssue, fields: { ...mockIssue.fields, project: { key: 'TEST' } } };
+      const event = { eventType: 'avi:jira:created:issue', issue: otherProjectIssue };
+
+      await automationEngine(event);
+
+      // Only the full-issue re-fetch should have happened — no transitions/comment/assignee calls.
+      expect(api.asApp().requestJira).not.toHaveBeenCalledWith(
+        expect.stringMatching(/\/(transitions|comment|assignee)/),
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+
+    test('Case 6: editing priority on an issue does not fire a rule whose trigger is issue_created', async () => {
+      kvs.get.mockImplementation((key) => {
+        if (key === 'bpmn:index') return [{ id: 'diagram-1', projectKey: 'TEST' }];
+        if (key === 'automation:rules:diagram-1') return [{
+          id: 'rule-created-only',
+          enabled: true,
+          trigger: 'issue_created', // NOT priority_changed/issue_updated
+          conditions: [],
+          actions: [{ type: 'add_comment', config: { value: 'Should never post' } }],
+        }];
+        return null;
+      });
+
+      const event = {
+        eventType: 'avi:jira:updated:issue', // an edit, not a creation
+        issue: mockIssue,
+        changelog: { items: [{ field: 'priority', fromString: 'Medium', toString: 'High' }] },
+      };
+
+      await automationEngine(event);
+
+      expect(api.asApp().requestJira).not.toHaveBeenCalledWith(
+        expect.stringContaining('/comment'),
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+
+    test('disabled rules never execute even when trigger and conditions match', async () => {
+      kvs.get.mockImplementation((key) => {
+        if (key === 'bpmn:index') return [{ id: 'diagram-1', projectKey: 'TEST' }];
+        if (key === 'automation:rules:diagram-1') return [{
+          id: 'rule-disabled',
+          enabled: false, // <-- should be skipped entirely
+          trigger: 'issue_created',
+          conditions: [],
+          actions: [{ type: 'add_comment', config: { value: 'Should never post' } }],
+        }];
+        return null;
+      });
+
+      const event = { eventType: 'avi:jira:created:issue', issue: mockIssue };
+      await automationEngine(event);
+
+      expect(api.asApp().requestJira).not.toHaveBeenCalledWith(
+        expect.stringContaining('/comment'),
         expect.objectContaining({ method: 'POST' })
       );
     });
