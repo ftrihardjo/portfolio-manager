@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
+import {trackEvent} from "../analytics";
 
 // ─── Constants ──────────────────────────────────────────────────────
 const TRIGGER_TYPES = [
@@ -85,6 +86,7 @@ function DecisionTableEditor({ table, onChange }) {
   };
   const addRow = () => {
     onChange({ ...table, rows: [...rows, emptyDecisionRow(inputs, outputs)] });
+    trackEvent('dmn_row_added', { row_count: rows.length + 1 });
   };
 
   // Index-based so rows loaded from older saves (no `id`) still delete correctly.
@@ -258,7 +260,11 @@ function RuleCard({ rule, index, onChange, onRemove }) {
         </h4>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <button
-            onClick={(e) => { e.stopPropagation(); update({ enabled: !rule.enabled }); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              update({ enabled: !rule.enabled });
+              trackEvent(rule.enabled ? 'rule_disabled' : 'rule_enabled', { trigger_type: rule.trigger });
+            }}
             style={{ fontSize: 11, height: 26 }}
           >
             {rule.enabled ? 'Disable' : 'Enable'}
@@ -292,7 +298,10 @@ function RuleCard({ rule, index, onChange, onRemove }) {
             <div className="rule-block-label trigger">⚡ When (Trigger)</div>
             <select
               value={rule.trigger}
-              onChange={(e) => update({ trigger: e.target.value })}
+              onChange={(e) => {
+                update({ trigger: e.target.value });
+                trackEvent('trigger_type_selected', { trigger_type: e.target.value });
+              }}
               data-testid={`rule-trigger-${rule.id}`}
             >
               {TRIGGER_TYPES.map((t) => (
@@ -383,7 +392,10 @@ function RuleCard({ rule, index, onChange, onRemove }) {
               <div key={act.id} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
                 <select
                   value={act.type}
-                  onChange={(e) => updateAction(act.id, { type: e.target.value })}
+                  onChange={(e) => {
+                    updateAction(act.id, { type: e.target.value });
+                    trackEvent('action_type_used', { action_type: e.target.value });
+                  }}
                   style={{ flex: 1 }}
                 >
                   {ACTION_TYPES.map((a) => (
@@ -430,25 +442,27 @@ export default function AutomationRuleBuilder({ diagramId, projectKey, canEdit }
   }, [diagramId]);
 
   const addRule = useCallback(() => {
-    setRules((prev) => [
-      ...prev,
-      {
-        id: newRuleId(),
-        name: '',
-        enabled: true,
-        trigger: 'issue_created',
-        triggerConfig: {},
-        conditions: [emptyCondition()],
-        decisionTable: {
-          inputs: [{ id: `in-${Date.now()}`, label: 'Priority', type: 'string' }],
-          outputs: [{ id: `out-${Date.now()}`, label: 'Action', type: 'string' }],
-          rows: [],
-          hitPolicy: 'FIRST',
+    setRules((prev) => {
+      trackEvent('rule_created', { is_first_rule: prev.length === 0, project_key: projectKey });
+      return [
+        ...prev,
+        {
+          id: newRuleId(),
+          name: '',
+          enabled: true,
+          trigger: 'issue_created',
+          triggerConfig: {},
+          conditions: [emptyCondition()],
+          decisionTable: {
+            inputs: [{ id: `in-${Date.now()}`, label: 'Priority', type: 'string' }],
+            outputs: [{ id: `out-${Date.now()}`, label: 'Action', type: 'string' }],
+            rows: [],
+            hitPolicy: 'FIRST',
+          },
+          actions: [emptyAction()],
         },
-        actions: [emptyAction()],
-      },
-    ]);
-  }, []);
+      ]});
+  }, [projectKey]);
 
   const updateRule = useCallback((updated) => {
     setRules((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
@@ -472,9 +486,11 @@ export default function AutomationRuleBuilder({ diagramId, projectKey, canEdit }
     try {
       await window.__forgeInvoke('saveAutomationRules', { diagramId, projectKey, rules });
       setSaved(true);
+      trackEvent('rule_saved', { rule_count: rules.length, project_key: projectKey });
       setTimeout(() => setSaved(false), 3000);
     } catch (e) {
       setError(e.message || 'Failed to save rules');
+      trackEvent('rule_save_failed', { project_key: projectKey });
     } finally {
       setSaving(false);
     }
