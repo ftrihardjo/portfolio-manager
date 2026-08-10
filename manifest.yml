@@ -45,13 +45,8 @@ permissions:
     - write:jira-work
     - storage:app
   external:
-    scripts:
-      - address: https://www.googletagmanager.com/gtag/js
-        category: analytics
-  fetch:
-    backend:
-      - "*.atlassian.net"
-      - address: "https://www.google-analytics.com"
-        category: analytics
-    images:
-      - address: https://www.google-analytics.com
+    fetch:
+      backend:
+        - "*.atlassian.net"
+        - address: "https://www.google-analytics.com"
+          category: analytics

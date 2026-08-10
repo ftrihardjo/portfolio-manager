@@ -619,5 +619,23 @@ resolver.define('diffBpmnVersions', async ({ payload }) => {
   };
 });
 
+const GA_MEASUREMENT_ID = 'G-9FFJELQ6BR';
+const GA_API_SECRET = process.env.GA_API_SECRET;
+
+resolver.define('trackAnalyticsEvent', async ({ payload, context }) => {
+  if (!GA_API_SECRET) return { skipped: true };
+  try {
+    const clientId = context?.accountId || 'anonymous';
+    await fetch(
+      `https://www.google-analytics.com/mp/collect?measurement_id=${GA_MEASUREMENT_ID}&api_secret=${GA_API_SECRET}`,
+      { method: 'POST', body: JSON.stringify({ client_id: clientId, events: [{ name: payload.name, params: payload.params || {} }] }) }
+    );
+    return { sent: true };
+  } catch (e) {
+    console.error('Analytics event failed:', e.message);
+    return { sent: false };
+  }
+});
+
 export const handler = resolver.getDefinitions();
 export { automationEngine };
