@@ -620,21 +620,27 @@ resolver.define('diffBpmnVersions', async ({ payload }) => {
 });
 
 const GA_MEASUREMENT_ID = 'G-9FFJELQ6BR';
-const GA_API_SECRET = process.env.GA_API_SECRET;
+const GA_API_SECRET = 't_irWikPRiK4b7-hMnWgMw';
 
-resolver.define('trackAnalyticsEvent', async ({ payload, context }) => {
-  if (!GA_API_SECRET) return { skipped: true };
+resolver.define('trackPlgEvent', async ({ payload, context }) => {
+  const { name, params = {}, clientId } = payload;
   try {
-    const clientId = context?.accountId || 'anonymous';
     await fetch(
       `https://www.google-analytics.com/mp/collect?measurement_id=${GA_MEASUREMENT_ID}&api_secret=${GA_API_SECRET}`,
-      { method: 'POST', body: JSON.stringify({ client_id: clientId, events: [{ name: payload.name, params: payload.params || {} }] }) }
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: clientId || 'unknown',
+          events: [{
+            name,
+            params: { ...params, actor: context?.accountId, debug_mode: true },
+          }],
+        }),
+      }
     );
-    return { sent: true };
-  } catch (e) {
-    console.error('Analytics event failed:', e.message);
-    return { sent: false };
-  }
+  } catch (e) { /* analytics must never break the app */ }
+  return { ok: true };
 });
 
 export const handler = resolver.getDefinitions();
