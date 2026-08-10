@@ -46,10 +46,12 @@ permissions:
     - storage:app
   external:
     scripts:
-      - address: "https://www.googletagmanager.com/gtag/js"
+      - address: https://www.googletagmanager.com/gtag/js
         category: analytics
-    fetch:
-      client:
-        - "https://www.google-analytics.com"
+  fetch:
+    backend:
+      - "*.atlassian.net"
+      - address: "https://www.google-analytics.com"
+        category: analytics
     images:
-      - "https://www.google-analytics.com"
+      - address: https://www.google-analytics.com
