@@ -1,5 +1,8 @@
-import React, { useState, useCallback, useMemo } from 'react';
-import {trackEvent} from "../analytics";
+import React, { useState, useCallback } from 'react';
+import { invoke } from '@forge/bridge';
+import { PLG, Events } from '../analytics';
+
+const draftKey = (id) => `automation:draft:${id}`;
 
 // ─── Constants ──────────────────────────────────────────────────────
 const TRIGGER_TYPES = [
@@ -432,14 +435,34 @@ export default function AutomationRuleBuilder({ diagramId, projectKey, canEdit }
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState(null);
+  const [dirty, setDirty] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
 
-  // Load effect
+  // Load on mount; restore an unsaved local draft so switching tabs never loses work.
   React.useEffect(() => {
-    if (!diagramId || typeof window.__forgeInvoke !== 'function') return;
-    window.__forgeInvoke('getAutomationRules', { diagramId })
-      .then((r) => setRules(r || []))
-      .catch(() => {});
+    let cancelled = false;
+    (async () => {
+      if (!diagramId) return;
+      try {
+        const savedRules = (await invoke('getAutomationRules', { diagramId })) || [];
+        if (cancelled) return;
+        let draft = null;
+        try { draft = JSON.parse(localStorage.getItem(draftKey(diagramId)) || 'null'); } catch { draft = null; }
+        if (Array.isArray(draft) && draft.length) {
+          setRules(draft); setDirty(true); setDraftRestored(true);
+        } else {
+          setRules(savedRules); setDirty(false); setDraftRestored(false);
+        }
+      } catch { /* stay empty */ }
+    })();
+    return () => { cancelled = true; };
   }, [diagramId]);
+
+  // Keep a local draft while there are unsaved changes.
+  React.useEffect(() => {
+    if (!diagramId || !dirty) return;
+    try { localStorage.setItem(draftKey(diagramId), JSON.stringify(rules)); } catch {}
+  }, [rules, dirty, diagramId]);
 
   const addRule = useCallback(() => {
     setRules((prev) => {
@@ -477,20 +500,37 @@ export default function AutomationRuleBuilder({ diagramId, projectKey, canEdit }
   // handleSave
   const handleSave = async () => {
     if (!canEdit) return;
-    if (typeof window.__forgeInvoke !== 'function') {
-      setError('Forge bridge unavailable — reload the page, then save again.');
-      return;
-    }
     setSaving(true);
     setError(null);
     try {
-      await window.__forgeInvoke('saveAutomationRules', { diagramId, projectKey, rules });
+      await invoke('saveAutomationRules', { diagramId, projectKey, rules });
+
+      // Persisted → drop the draft
+      setDirty(false);
+      setDraftRestored(false);
+      try { localStorage.removeItem(draftKey(diagramId)); } catch {}
       setSaved(true);
-      trackEvent('rule_saved', { rule_count: rules.length, project_key: projectKey });
       setTimeout(() => setSaved(false), 3000);
+
+      // ── PLG: fire ONLY after confirmed persistence ──────────────
+      const usesDmn = rules.some((r) => (r.decisionTable?.rows?.length || 0) > 0);
+      PLG.track(Events.AUTOMATION_RULE_CREATED, {
+        rule_count: rules.length,
+        enabled_count: rules.filter((r) => r.enabled).length,
+        uses_dmn: usesDmn,
+        project_key: projectKey,
+      });
+      if (usesDmn) {
+        PLG.track(Events.DECISION_TABLE_USED, {
+          rows: rules.reduce((n, r) => n + (r.decisionTable?.rows?.length || 0), 0),
+        });
+      }
+      if (!localStorage.getItem('plg_first_rule_done')) {
+        PLG.track(Events.FIRST_RULE_CREATED, { project_key: projectKey });
+        localStorage.setItem('plg_first_rule_done', '1');
+      }
     } catch (e) {
-      setError(e.message || 'Failed to save rules');
-      trackEvent('rule_save_failed', { project_key: projectKey });
+      setError(e.message || 'Failed to save rules'); // no PLG events on failure
     } finally {
       setSaving(false);
     }

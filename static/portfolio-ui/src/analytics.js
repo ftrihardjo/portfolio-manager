@@ -6,8 +6,11 @@ if (!clientId) {
   localStorage.setItem('plg_cid', clientId);
 }
 
-const send = (name, params) =>
-  invoke('trackPlgEvent', { name, params, clientId }).catch(() => {});
+const send = (name, params) => {
+  try {
+    Promise.resolve(invoke('trackPlgEvent', { name, params, clientId })).catch(() => {});
+  } catch { /* never break the UI */ }
+};
 
 export const Events = {
   FIRST_DIAGRAM_SAVED: 'activation_first_diagram_saved',
