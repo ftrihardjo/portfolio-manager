@@ -73,8 +73,12 @@ describe('AutomationRuleBuilder PLG + persistence', () => {
     view.unmount();
 
     render(<AutomationRuleBuilder {...props} />);
-    expect(await screen.findByTestId('draft-restored')).toBeTruthy();
-    expect(await screen.findAllByText('Untitled Rule')).toHaveLength(1);
+
+    // Use waitFor to ensure the state update finishes before asserting
+    await waitFor(() => {
+      expect(screen.getByTestId('draft-restored')).toBeTruthy();
+      expect(screen.getAllByText('Untitled Rule')).toHaveLength(1);
+    });
   });
 
   it('clears the draft after a successful save', async () => {

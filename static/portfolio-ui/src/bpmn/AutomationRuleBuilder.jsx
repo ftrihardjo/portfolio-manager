@@ -446,14 +446,27 @@ export default function AutomationRuleBuilder({ diagramId, projectKey, canEdit }
       try {
         const savedRules = (await invoke('getAutomationRules', { diagramId })) || [];
         if (cancelled) return;
+
         let draft = null;
-        try { draft = JSON.parse(localStorage.getItem(draftKey(diagramId)) || 'null'); } catch { draft = null; }
-        if (Array.isArray(draft) && draft.length) {
-          setRules(draft); setDirty(true); setDraftRestored(true);
-        } else {
-          setRules(savedRules); setDirty(false); setDraftRestored(false);
+        try {
+          const raw = localStorage.getItem(draftKey(diagramId));
+          draft = raw ? JSON.parse(raw) : null;
+        } catch {
+          draft = null;
         }
-      } catch { /* stay empty */ }
+
+        if (Array.isArray(draft) && draft.length > 0) {
+          setRules(draft);
+          setDirty(true);
+          setDraftRestored(true); // ✅ Must be true here
+        } else {
+          setRules(savedRules);
+          setDirty(false);
+          setDraftRestored(false);
+        }
+      } catch (e) {
+        console.error('Load rules error:', e);
+      }
     })();
     return () => { cancelled = true; };
   }, [diagramId]);
@@ -465,27 +478,27 @@ export default function AutomationRuleBuilder({ diagramId, projectKey, canEdit }
   }, [rules, dirty, diagramId]);
 
   const addRule = useCallback(() => {
-    setRules((prev) => {
-      trackEvent('rule_created', { is_first_rule: prev.length === 0, project_key: projectKey });
-      return [
-        ...prev,
-        {
-          id: newRuleId(),
-          name: '',
-          enabled: true,
-          trigger: 'issue_created',
-          triggerConfig: {},
-          conditions: [emptyCondition()],
-          decisionTable: {
-            inputs: [{ id: `in-${Date.now()}`, label: 'Priority', type: 'string' }],
-            outputs: [{ id: `out-${Date.now()}`, label: 'Action', type: 'string' }],
-            rows: [],
-            hitPolicy: 'FIRST',
-          },
-          actions: [emptyAction()],
+    setRules((prev) => [
+      ...prev,
+      {
+        id: newRuleId(),
+        name: '',
+        enabled: true,
+        trigger: 'issue_created',
+        triggerConfig: {},
+        conditions: [emptyCondition()],
+        decisionTable: {
+          inputs: [{ id: `in-${Date.now()}`, label: 'Priority', type: 'string' }],
+          outputs: [{ id: `out-${Date.now()}`, label: 'Action', type: 'string' }],
+          rows: [],
+          hitPolicy: 'FIRST',
         },
-      ]});
-  }, [projectKey]);
+        actions: [emptyAction()],
+      },
+    ]);
+    setDirty(true);
+    setDraftRestored(false);
+  }, []);
 
   const updateRule = useCallback((updated) => {
     setRules((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
@@ -570,6 +583,13 @@ export default function AutomationRuleBuilder({ diagramId, projectKey, canEdit }
         </div>
       </div>
 
+      {/* ✅ BANNER MUST BE HERE - Top level, outside of any conditionals */}
+      {draftRestored && (
+        <div data-testid="draft-restored" style={{ padding: '8px 12px', marginBottom: 12, fontSize: 13, background: '#ebecf0', borderRadius: 6, color: '#172b4d' }}>
+          Unsaved draft restored — press <strong>Save Rules</strong> to persist it.
+        </div>
+      )}
+
       {error && (
         <div style={{ padding: '8px 12px', background: 'var(--ads-danger-bg)', color: 'var(--ads-danger)', borderRadius: 'var(--r-sm)', marginBottom: 12, fontSize: 13 }}>
           {error}
@@ -580,22 +600,12 @@ export default function AutomationRuleBuilder({ diagramId, projectKey, canEdit }
         <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--ads-text-muted)' }}>
           <div style={{ fontSize: 32, marginBottom: 8 }}>⚡</div>
           <p style={{ fontSize: 14, marginBottom: 4 }}>No automation rules yet</p>
-          <p style={{ fontSize: 12 }}>
-            Create rules that automatically trigger actions when issues change.
-          </p>
-          <button onClick={addRule} className="btn-primary" style={{ color: '#fff', marginTop: 12 }}>
-            + Create Your First Rule
-          </button>
+          <p style={{ fontSize: 12 }}>Create rules that automatically trigger actions when issues change.</p>
+          <button onClick={addRule} className="btn-primary" style={{ color: '#fff', marginTop: 12 }}>+ Create Your First Rule</button>
         </div>
       ) : (
         rules.map((rule, idx) => (
-          <RuleCard
-            key={rule.id}
-            rule={rule}
-            index={idx}
-            onChange={updateRule}
-            onRemove={removeRule}
-          />
+          <RuleCard key={rule.id} rule={rule} index={idx} onChange={updateRule} onRemove={removeRule} />
         ))
       )}
     </div>
