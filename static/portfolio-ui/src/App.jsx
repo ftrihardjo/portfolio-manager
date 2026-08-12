@@ -494,6 +494,12 @@ export default function App() {
     };
 
   const openCommitHistory = async (id) => {
+    setError(null); // clear any stale banner (e.g. a previous diagram's
+    // "deleted by another user" message) — otherwise it stays stuck on
+    // screen after successfully opening a totally different, healthy
+    // diagram, since nothing else in this success path ever clears it.
+    // This is the actual entry point clicking a diagram in the sidebar
+    // list uses (openBpmnDiagram below is a separate "reload remote" path).
     try {
       const rec = await invoke('getBpmnDiagram', { diagramId: id });
       setHistoryRecord(rec);
@@ -744,6 +750,10 @@ export default function App() {
   }
 
   const openBpmnDiagram = async (id) => {
+    setError(null); // clear any stale banner (e.g. a previous diagram's
+    // "deleted by another user" message) — otherwise it stays stuck on
+    // screen after successfully switching to a totally different, healthy
+    // diagram, since nothing else in this success path ever clears it.
     try {
       const rec = await invoke('getBpmnDiagram', { diagramId: id });
       setSelectedDiagramId(id);
@@ -783,6 +793,8 @@ export default function App() {
   }
 
   function startNewBpmnDiagram() {
+    setError(null); // same reasoning as openBpmnDiagram — don't carry a
+    // stale error banner from whatever was previously open.
     setSelectedDiagramId(null); setSelectedDiagramXml(null); setBpmnDirty(false);
     setNewDiagramName(''); setNewDiagramProjectKey(projects[0]?.key || '');
     bpmnVersionRef.current = null;   // +

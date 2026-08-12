@@ -2,7 +2,7 @@
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import App from './App';
-import { invoke, router } from '@forge/bridge';
+import { invoke, router, realtime } from '@forge/bridge';
 import { jsPDF } from 'jspdf';
 vi.mock('@forge/bridge', () => ({
   invoke: vi.fn(),
@@ -1001,6 +1001,42 @@ describe('App', () => {
         expect(reverted).toBeTruthy();
         expect(reverted.params.target_version).toBe(1);
       });
+    });
+
+    it('clears a stale "deleted by another user" banner after opening a different, unaffected diagram', async () => {
+      const diagrams = {
+        'd-test': { id: 'd-test', name: 'test', projectKey: 'PROJ1', xml: '<xml/>', version: 1, versions: [] },
+        'd-pay': { id: 'd-pay', name: 'Pay', projectKey: 'PROJ1', xml: '<xml/>', version: 16, versions: [] },
+      };
+      mockInvoke({
+        getProjects: projectsMock,
+        getCurrentUser: { accountId: 'acc-lead' },
+        getBpmnDiagrams: () => Object.values(diagrams).map((d) => ({ id: d.id, name: d.name, projectKey: d.projectKey, updatedAt: '2026-01-02', version: d.version })),
+        getBpmnDiagram: ({ diagramId }) => diagrams[diagramId],
+        canEditProject: () => ({ canEdit: true }),
+        trackPlgEvent: () => ({ ok: true }),
+      });
+
+      render(<App />);
+      await waitFor(() => screen.getByText('Alpha'));
+      fireEvent.click(screen.getByRole('tab', { name: /BPMN/i }));
+      await waitFor(() => screen.getByText('test'));
+      fireEvent.click(screen.getByText('test'));
+      await waitFor(() => expect(screen.getByTestId('bpmn-version-list')).toBeInTheDocument());
+
+      // Simulate another user deleting the diagram we're currently viewing —
+      // this is what App.jsx's realtime.subscribe callback receives.
+      const latestCallback = realtime.subscribe.mock.calls.at(-1)[1];
+      await act(async () => {
+        latestCallback({ type: 'diagram:deleted', diagramId: 'd-test', deletedBy: 'someone-else' });
+      });
+      await waitFor(() => screen.getByText('This diagram was deleted by another user.'));
+
+      // Now open a completely different, healthy diagram — the stale banner
+      // should NOT still be attached to it.
+      fireEvent.click(screen.getByText('Pay'));
+      await waitFor(() => expect(screen.getByTestId('bpmn-version-list')).toBeInTheDocument());
+      expect(screen.queryByText('This diagram was deleted by another user.')).not.toBeInTheDocument();
     });
 
     it('only shows the Delete option next to diagrams the current user has edit permission for', async () => {
