@@ -20,7 +20,7 @@ beforeEach(() => {
       case 'getAutomationRules': return store[payload.diagramId] || [];
       case 'saveAutomationRules':
         store[payload.diagramId] = payload.rules;
-        return { saved: true, count: payload.rules.length };
+        return { saved: true, count: payload.rules.length, firstRuleForUser: !store.__ruleSeen && (store.__ruleSeen = true) };
       default: return { ok: true };
     }
   });

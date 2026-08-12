@@ -481,11 +481,45 @@ describe('BPMN diagrams (getCurrentUser, getBpmnDiagrams, getBpmnDiagram, saveBp
     });
 
     const fetched = await getResolver('getBpmnDiagram')({ payload: { diagramId: created.id } });
-    expect(fetched).toEqual(created);
+    // saveBpmnDiagram's response includes a transient firstDiagramForUser
+    // flag (for the frontend's PLG event choice) that's intentionally not
+    // persisted to KVS, so the fetched record won't carry it.
+    const { firstDiagramForUser, ...persisted } = created;
+    expect(firstDiagramForUser).toBe(true);
+    expect(fetched).toEqual(persisted);
 
     await expect(
       getResolver('getBpmnDiagram')({ payload: { diagramId: 'does-not-exist' } })
     ).rejects.toThrow('Diagram does-not-exist not found');
+  });
+
+  it('flags firstDiagramForUser only for that user\'s first save, not the tenant\'s', async () => {
+    mockCanEdit(true);
+    // First-ever save for LEAD_ACCOUNT_ID → true
+    const first = await getResolver('saveBpmnDiagram')({
+      payload: { diagramId: null, name: 'Diagram A', projectKey: 'TEST', xml: '<xml/>' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+    expect(first.firstDiagramForUser).toBe(true);
+
+    // Same user's second diagram → false
+    mockCanEdit(true);
+    const second = await getResolver('saveBpmnDiagram')({
+      payload: { diagramId: null, name: 'Diagram B', projectKey: 'TEST', xml: '<xml/>' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+    expect(second.firstDiagramForUser).toBe(false);
+
+    // A different user's first diagram → true, even though the tenant
+    // already has diagrams from someone else. This is the bug being fixed:
+    // activation should be per-user, not "is this the first diagram ever
+    // saved anywhere in the whole install".
+    mockCanEdit(true);
+    const otherUsersFirst = await getResolver('saveBpmnDiagram')({
+      payload: { diagramId: null, name: 'Diagram C', projectKey: 'TEST', xml: '<xml/>' },
+      context: { accountId: OTHER_ACCOUNT_ID },
+    });
+    expect(otherUsersFirst.firstDiagramForUser).toBe(true);
   });
 
   it('lets a user with edit permission delete a diagram', async () => {

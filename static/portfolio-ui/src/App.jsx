@@ -822,7 +822,6 @@ export default function App() {
     }
   };
   const saveBpmnDiagram = async (xml) => {
-    const isFirstDiagram = !selectedDiagramId && (bpmnDiagrams || []).length === 0;
     try {
       const payload = {
         diagramId: selectedDiagramId,
@@ -850,7 +849,7 @@ export default function App() {
         await resolveDisplayNames([rec.lastEditedBy]);
       }
       // 🚀 PLG TRACKING
-      if (isFirstDiagram) {
+      if (rec.firstDiagramForUser) {
         PLG.track(Events.FIRST_DIAGRAM_SAVED, { projectKey: rec.projectKey });
       } else {
         PLG.track(Events.DIAGRAM_SAVED, { version: rec.version });

@@ -531,7 +531,7 @@ export default function AutomationRuleBuilder({ diagramId, projectKey, canEdit }
     setSaving(true);
     setError(null);
     try {
-      await invoke('saveAutomationRules', { diagramId, projectKey, rules });
+      const result = await invoke('saveAutomationRules', { diagramId, projectKey, rules });
 
       // Persisted → drop the draft
       setDirty(false);
@@ -553,9 +553,8 @@ export default function AutomationRuleBuilder({ diagramId, projectKey, canEdit }
           rows: rules.reduce((n, r) => n + (r.decisionTable?.rows?.length || 0), 0),
         });
       }
-      if (!localStorage.getItem('plg_first_rule_done')) {
+      if (result.firstRuleForUser) {
         PLG.track(Events.FIRST_RULE_CREATED, { project_key: projectKey });
-        localStorage.setItem('plg_first_rule_done', '1');
       }
     } catch (e) {
       setError(e.message || 'Failed to save rules'); // no PLG events on failure

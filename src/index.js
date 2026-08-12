@@ -385,6 +385,17 @@ resolver.define('saveBpmnDiagram', async ({ payload, context }) => {
   const nextIndex = diagramId ? index.map((d) => (d.id === id ? meta : d)) : [...index, meta];
   await kvs.set(BPMN_INDEX_KEY, nextIndex);
 
+  // ★ Per-user activation tracking. The frontend used to infer "first
+  // diagram" from the *entire tenant's* diagram count being zero, which
+  // meant the activation_first_diagram_saved event could only ever fire
+  // once total, for whichever user happened to save the very first diagram
+  // in the whole Jira site — every other user's genuine first save (the
+  // thing this metric is supposed to measure) was silently misclassified
+  // as a regular save. Track it per accountId instead.
+  const activationKey = `activation:firstDiagram:${accountId}`;
+  const firstDiagramForUser = accountId ? !(await kvs.get(activationKey)) : false;
+  if (firstDiagramForUser) await kvs.set(activationKey, true);
+
   // ★ REALTIME: Broadcast the save to all connected clients
   try {
     await publish(REALTIME_CHANNEL, {
@@ -401,7 +412,7 @@ resolver.define('saveBpmnDiagram', async ({ payload, context }) => {
     console.error('Realtime publish failed (non-fatal):', e);
   }
 
-  return record;
+  return { ...record, firstDiagramForUser };
 });
 
 resolver.define('deleteBpmnDiagram', async ({ payload, context }) => {
@@ -473,6 +484,12 @@ resolver.define('saveAutomationRules', async ({ payload, context }) => {
   }
   await kvs.set(automationRulesKey(diagramId), rules);
 
+  // Per-user activation flag, mirroring saveBpmnDiagram — server-side so it's
+  // consistent across browsers/devices, not just the current one.
+  const activationKey = `activation:firstRule:${accountId}`;
+  const firstRuleForUser = accountId ? !(await kvs.get(activationKey)) : false;
+  if (firstRuleForUser) await kvs.set(activationKey, true);
+
   try {
     await publish(REALTIME_CHANNEL, {
       type: 'rules:saved',
@@ -485,7 +502,7 @@ resolver.define('saveAutomationRules', async ({ payload, context }) => {
     console.error('Realtime publish failed (non-fatal):', e);
   }
 
-  return { saved: true, count: rules.length };
+  return { saved: true, count: rules.length, firstRuleForUser };
 });
 
 // Revert = create a NEW head commit whose XML is copied from an older one.
