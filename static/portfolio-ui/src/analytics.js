@@ -6,9 +6,29 @@ if (!clientId) {
   localStorage.setItem('plg_cid', clientId);
 }
 
+// GA4 requires session_id + engagement_time_msec on Measurement Protocol
+// events for them to be counted in Realtime/Active users reports — without
+// these, GA accepts the hit but it won't show up as user activity anywhere.
+// One session_id per tab/page-load is enough; sessionStorage clears itself
+// when the tab closes, which is the behavior we want here.
+let sessionId = sessionStorage.getItem('plg_sid');
+if (!sessionId) {
+  sessionId = `${Date.now()}`;
+  sessionStorage.setItem('plg_sid', sessionId);
+}
+let lastEventAt = Date.now();
+
 const send = (name, params) => {
   try {
-    Promise.resolve(invoke('trackPlgEvent', { name, params, clientId })).catch(() => {});
+    const now = Date.now();
+    const engagementMs = Math.max(now - lastEventAt, 1);
+    lastEventAt = now;
+    const fullParams = {
+      ...params,
+      session_id: sessionId,
+      engagement_time_msec: engagementMs,
+    };
+    Promise.resolve(invoke('trackPlgEvent', { name, params: fullParams, clientId })).catch(() => {});
   } catch { /* never break the UI */ }
 };
 
