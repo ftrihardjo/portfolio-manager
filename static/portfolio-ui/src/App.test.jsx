@@ -116,14 +116,6 @@ vi.mock('bpmn-js-properties-panel', () => ({
 }));
 
 vi.mock('bpmn-js-token-simulation', () => ({ default: 'mocked-token-simulation' }));
-vi.mock('react-ga4', () => ({
-  __esModule: true,
-  default: {
-    initialize: vi.fn(),
-    send: vi.fn(),
-    event: vi.fn(),
-  },
-}));
 
 // Suppress expected React warnings in tests
 const originalError = console.error;
@@ -965,6 +957,50 @@ describe('App', () => {
       await waitFor(() => expect(screen.getByTestId('bpmn-canvas')).toBeInTheDocument());
       await waitFor(() => expect(screen.getByText(/you need edit permission on this project/i)).toBeInTheDocument());
       expect(screen.queryByTestId('save-bpmn')).not.toBeInTheDocument();
+    });
+
+    it('fires engagement_diagram_reverted with the correct target version after a successful revert', async () => {
+      const tracked = [];
+      let record = {
+        id: 'diagram-1', name: 'Refund Flow', projectKey: 'PROJ1', xml: '<xml/>', version: 2,
+        versions: [
+          { version: 1, name: 'v1', savedAt: '2026-01-01', savedBy: 'acc-lead', savedByDisplay: 'Lead' },
+          { version: 2, name: 'v2', savedAt: '2026-01-02', savedBy: 'acc-lead', savedByDisplay: 'Lead' },
+        ],
+      };
+      mockInvoke({
+        getProjects: projectsMock,
+        getCurrentUser: { accountId: 'acc-lead' },
+        getBpmnDiagrams: () => [{ id: record.id, name: record.name, projectKey: record.projectKey, updatedAt: '2026-01-02', version: record.version }],
+        getBpmnDiagram: () => record,
+        canEditProject: () => ({ canEdit: true }),
+        revertBpmnDiagram: ({ toVersion }) => {
+          record = {
+            ...record,
+            version: 3,
+            versions: [...record.versions, { version: 3, name: `Reverted to v${toVersion}`, kind: 'revert', revertedFromVersion: toVersion, savedBy: 'acc-lead' }],
+          };
+          return record;
+        },
+        trackPlgEvent: (payload) => { tracked.push(payload); return { ok: true }; },
+      });
+
+      render(<App />);
+      await waitFor(() => screen.getByText('Alpha'));
+      fireEvent.click(screen.getByRole('tab', { name: /BPMN/i }));
+      await waitFor(() => screen.getByText('Refund Flow'));
+      fireEvent.click(screen.getByText('Refund Flow'));
+      await waitFor(() => expect(screen.getByTestId('bpmn-version-list')).toBeInTheDocument());
+
+      // Revert to v1 (not HEAD), confirm, and check the resulting event.
+      fireEvent.click(screen.getByTestId('revert-commit-1'));
+      fireEvent.click(screen.getByText('Confirm revert'));
+
+      await waitFor(() => {
+        const reverted = tracked.find((t) => t.name === 'engagement_diagram_reverted');
+        expect(reverted).toBeTruthy();
+        expect(reverted.params.target_version).toBe(1);
+      });
     });
 
     it('only shows the Delete option next to diagrams the current user has edit permission for', async () => {

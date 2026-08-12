@@ -514,6 +514,12 @@ export default function App() {
       upsertDiagramMeta(rec);
       setBpmnDiagrams(await invoke('getBpmnDiagrams'));
       setSrAnnouncement(`Reverted to v${toVersion} as new commit v${rec.version}`);
+      // 🚀 PLG TRACKING — only after confirmed persistence, matching every
+      // other event in this file. `version` didn't exist in this function's
+      // scope (it's a same-named parameter of the unrelated handleCompare
+      // above), so this line threw a ReferenceError on every call and the
+      // event never actually made it to PLG.track.
+      PLG.track(Events.DIAGRAM_REVERTED, { target_version: toVersion, new_version: rec.version });
     } catch (e) {
       if (e.message && e.message.startsWith('Conflict:')) {
         setBpmnConflict({
@@ -523,7 +529,6 @@ export default function App() {
       }
       setError(e.message);
     }
-    PLG.track(Events.DIAGRAM_REVERTED, { target_version: version });
   };
   // ★ Display name cache
   const [displayNameCache, setDisplayNameCache] = useState({});
