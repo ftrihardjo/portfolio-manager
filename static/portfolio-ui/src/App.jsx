@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import ReactGA from 'react-ga4';
 import { invoke, router } from '@forge/bridge';
 import { Network, DataSet } from 'vis-network/standalone';
 import { jsPDF } from 'jspdf';
@@ -7,6 +6,7 @@ import BpmnDiagramView from './bpmn/BpmnDiagramView';
 import BpmnEditorModal from './bpmn/BpmnEditorModal';   // ★ NEW
 import BpmnVersionList from './bpmn/BpmnVersionList';   // ★ NEW
 import BpmnCommitHistory from './bpmn/BpmnCommitHistory';
+import { PLG, Events } from './analytics';
 import 'vis-network/styles/vis-network.css';
 import 'bpmn-js/dist/assets/diagram-js.css';
 import 'bpmn-js/dist/assets/bpmn-font/css/bpmn.css';
@@ -591,18 +591,7 @@ export default function App() {
 
   // ✅ Track tab switches automatically
   useEffect(() => {
-    ReactGA.send({
-      hitType: 'pageview',
-      page: `/portfolio-manager/${activeTab}`,
-      title: `Portfolio Manager - ${activeTab}`
-    });
-
-    // Also send a custom event for more detailed tracking
-    ReactGA.event({
-      category: 'Navigation',
-      action: 'Tab Switched',
-      label: activeTab,
-    });
+    PLG.track(Events.TAB_VIEWED, { tab: activeTab });
   }, [activeTab]);
 
   // Debounce search query
@@ -738,7 +727,10 @@ export default function App() {
         currentUserAccountId ? Promise.resolve({ accountId: currentUserAccountId }) : invokeWithRetry('getCurrentUser', {}),
       ]);
       setBpmnDiagrams(diagrams || []);
-      if (user?.accountId) setCurrentUserAccountId(user.accountId);
+      if (user?.accountId) {
+        setCurrentUserAccountId(user.accountId);
+        PLG.identify(user);
+      }
     } catch (e) {
       setError('BPMN load error: ' + e.message);
     } finally {

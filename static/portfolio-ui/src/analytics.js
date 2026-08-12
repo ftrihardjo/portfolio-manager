@@ -21,6 +21,7 @@ export const Events = {
   DECISION_TABLE_USED: 'engagement_decision_table_used',
   COMMIT_LEDGER_USED: 'engagement_commit_ledger_used',
   SAVE_CONFLICT: 'friction_save_conflict',
+  TAB_VIEWED: 'engagement_tab_viewed',
 };
 
 let identifiedUser = null;

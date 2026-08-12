@@ -620,26 +620,37 @@ resolver.define('diffBpmnVersions', async ({ payload }) => {
 });
 
 const GA_MEASUREMENT_ID = 'G-9FFJELQ6BR';
-const GA_API_SECRET = 't_irWikPRiK4b7-hMnWgMw';
+// TODO: move off the hardcoded fallback — run
+//   forge variables set --encrypt GA_API_SECRET <secret>
+// then this reads it via process.env instead of shipping it in source.
+const GA_API_SECRET = process.env.GA_API_SECRET || 't_irWikPRiK4b7-hMnWgMw';
 
 resolver.define('trackPlgEvent', async ({ payload, context }) => {
   const { name, params = {}, clientId } = payload;
   try {
-    await fetch(
+    const eventParams = { ...params, actor: context?.accountId };
+    // Only tag hits as debug when explicitly requested (e.g. while watching
+    // GA4 DebugView during development). Hardcoding this to true routes every
+    // hit to DebugView only and keeps it out of standard reports, which is
+    // why "Active users" stayed at 0 even after events started sending.
+    if (params.debug_mode) eventParams.debug_mode = true;
+    else delete eventParams.debug_mode;
+
+    const res = await fetch(
       `https://www.google-analytics.com/mp/collect?measurement_id=${GA_MEASUREMENT_ID}&api_secret=${GA_API_SECRET}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           client_id: clientId || 'unknown',
-          events: [{
-            name,
-            params: { ...params, actor: context?.accountId, debug_mode: true },
-          }],
+          events: [{ name, params: eventParams }],
         }),
       }
     );
-  } catch (e) { /* analytics must never break the app */ }
+    if (!res.ok) {
+      console.error('GA4 collect failed', res.status, await res.text());
+    }
+  } catch (e) { console.error('GA4 collect error', e); /* analytics must never break the app */ }
   return { ok: true };
 });
 
