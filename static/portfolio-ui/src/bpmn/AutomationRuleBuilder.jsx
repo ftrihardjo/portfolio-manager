@@ -447,18 +447,18 @@ export default function AutomationRuleBuilder({ diagramId, projectKey, canEdit }
         const savedRules = (await invoke('getAutomationRules', { diagramId })) || [];
         if (cancelled) return;
 
+        // A draft key PRESENT in localStorage (even "[]") means unsaved
+        // changes exist — including a deletion that empties the list.
+        const raw = localStorage.getItem(draftKey(diagramId));
         let draft = null;
-        try {
-          const raw = localStorage.getItem(draftKey(diagramId));
-          draft = raw ? JSON.parse(raw) : null;
-        } catch {
-          draft = null;
+        if (raw !== null) {
+          try { draft = JSON.parse(raw); } catch { draft = null; }
         }
 
-        if (Array.isArray(draft) && draft.length > 0) {
-          setRules(draft);
+        if (Array.isArray(draft)) {
+          setRules(draft);            // may legitimately be []
           setDirty(true);
-          setDraftRestored(true); // ✅ Must be true here
+          setDraftRestored(true);
         } else {
           setRules(savedRules);
           setDirty(false);
@@ -473,8 +473,17 @@ export default function AutomationRuleBuilder({ diagramId, projectKey, canEdit }
 
   // Keep a local draft while there are unsaved changes.
   React.useEffect(() => {
-    if (!diagramId || !dirty) return;
-    try { localStorage.setItem(draftKey(diagramId), JSON.stringify(rules)); } catch {}
+    if (!diagramId) return;
+    if (!dirty) return;
+    try {
+      const json = JSON.stringify(rules);
+      localStorage.setItem(draftKey(diagramId), json);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Draft saved]', diagramId, json);
+      }
+    } catch (e) {
+      console.error('[Draft save failed]', e);
+    }
   }, [rules, dirty, diagramId]);
 
   const addRule = useCallback(() => {
@@ -506,8 +515,14 @@ export default function AutomationRuleBuilder({ diagramId, projectKey, canEdit }
   }, []);
 
   const removeRule = useCallback((id) => {
-    setRules((prev) => prev.filter((r) => r.id !== id));
-    setSaved(false);
+    setRules((prev) => {
+      const next = prev.filter((r) => r.id !== id);
+      // Mark dirty inside the state updater to guarantee it's set
+      // before the draft-saving effect runs
+      setDirty(true);
+      setDraftRestored(false);
+      return next;
+    });
   }, []);
 
   // handleSave
@@ -586,7 +601,9 @@ export default function AutomationRuleBuilder({ diagramId, projectKey, canEdit }
       {/* ✅ BANNER MUST BE HERE - Top level, outside of any conditionals */}
       {draftRestored && (
         <div data-testid="draft-restored" style={{ padding: '8px 12px', marginBottom: 12, fontSize: 13, background: '#ebecf0', borderRadius: 6, color: '#172b4d' }}>
-          Unsaved draft restored — press <strong>Save Rules</strong> to persist it.
+          {rules.length === 0
+            ? 'Unsaved deletion — press Save Rules to confirm it.'
+            : 'Unsaved draft restored — press Save Rules to persist it.'}
         </div>
       )}
 

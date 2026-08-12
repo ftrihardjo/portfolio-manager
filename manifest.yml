@@ -14,25 +14,22 @@ modules:
       title: BPMN, Workflow Automation & Portfolio Manager
       layout: basic
 
+  # ─── Automation Engine Triggers (Forge Syntax) ──────────────────────
+  trigger:
+    - key: issue-created-trigger
+      function: automation-engine
+      events:
+        - avi:jira:created:issue
+    - key: issue-updated-trigger
+      function: automation-engine
+      events:
+        - avi:jira:updated:issue
+
   function:
     - key: resolver
       handler: index.handler
     - key: automation-engine
       handler: index.automationEngine
-
-  trigger:
-    - key: automation-trigger-created
-      function: automation-engine
-      events:
-        - avi:jira:created:issue
-      filter:
-        ignoreSelf: true # ← critical: stops infinite loops when the engine itself edits issues
-    - key: automation-trigger-updated
-      function: automation-engine
-      events:
-        - avi:jira:updated:issue
-      filter:
-        ignoreSelf: true
 
 resources:
   - key: portfolio-ui
@@ -47,6 +44,5 @@ permissions:
   external:
     fetch:
       backend:
-        - "*.atlassian.net"
-        - address: "https://www.google-analytics.com"
-          category: analytics
+        - address: "*.atlassian.net"
+        - address: "*.google-analytics.com"

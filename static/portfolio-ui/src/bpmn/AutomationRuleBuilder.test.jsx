@@ -66,6 +66,43 @@ describe('AutomationRuleBuilder PLG + persistence', () => {
     expect(await screen.findAllByText('Untitled Rule')).toHaveLength(1);
   });
 
+  it('keeps an unsaved deletion across tab switches and persists it on save', async () => {
+    store.d1 = [{
+      id: 'rule-x', name: 'Do Nothing', enabled: true, trigger: 'issue_created',
+      triggerConfig: {}, conditions: [], actions: [],
+      decisionTable: { inputs: [], outputs: [], rows: [], hitPolicy: 'FIRST' },
+    }];
+
+    const view = render(<AutomationRuleBuilder {...props} />);
+    expect(await screen.findByText('Do Nothing')).toBeTruthy();
+
+    // Delete the rule (unsaved)
+    fireEvent.click(screen.getByText('Delete'));
+
+    // Wait for the state update and draft save to complete
+    await waitFor(() => {
+      const draft = localStorage.getItem('automation:draft:d1');
+      expect(draft).toBe('[]');
+    }, { timeout: 3000 });
+
+    view.unmount();
+
+    // Return: deletion still pending — the rule must NOT reappear
+    const view2 = render(<AutomationRuleBuilder {...props} />);
+    await waitFor(() => expect(screen.getByTestId('draft-restored')).toBeTruthy());
+    expect(screen.queryByText('Do Nothing')).toBeNull();
+
+    // Confirm with Save Rules → backend becomes []
+    fireEvent.click(screen.getByTestId('save-rules'));
+    await waitFor(() => expect(store.d1).toEqual([]));
+    view2.unmount();
+
+    // Return again: still empty, no banner (deletion is committed)
+    render(<AutomationRuleBuilder {...props} />);
+    await waitFor(() => expect(screen.queryByTestId('draft-restored')).toBeNull());
+    expect(screen.queryByText('Do Nothing')).toBeNull();
+  });
+
   it('restores an unsaved draft when returning without saving', async () => {
     const view = render(<AutomationRuleBuilder {...props} />);
     fireEvent.click(await screen.findByTestId('add-rule'));
