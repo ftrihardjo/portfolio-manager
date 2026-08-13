@@ -580,6 +580,7 @@ export default function App() {
   const [versions, setVersions] = useState([]);
   const [viewingVersion, setViewingVersion] = useState(null);
   const [versionName, setVersionName] = useState('');  const bpmnDirtyRef = useRef(false);
+  const [commitMessage, setCommitMessage] = useState('');
   useEffect(() => { bpmnDirtyRef.current = bpmnDirty; }, [bpmnDirty]);
   // Collaborative editing via polling (Forge has no push channel). We poll the
   // cheap index; on a version change we either auto-reload (no local edits) or
@@ -763,6 +764,7 @@ export default function App() {
       setBpmnDirty(false);
       setViewingVersion(rec.version);
       setVersionName('');
+      setCommitMessage('');
       setVersions(normalizeVersions(rec));
 
       // ★ Resolve display names for all version authors
@@ -787,6 +789,7 @@ export default function App() {
       setBpmnDirty(false);
       setBpmnConflict(null);
       setVersionName('');
+      setCommitMessage('');
       const head = versions.reduce((m, x) => Math.max(m, x.version || 0), bpmnVersionRef.current || 0);
       bpmnVersionRef.current = head || bpmnVersionRef.current;
     } catch (e) { setError('Failed to load version: ' + e.message); }
@@ -797,6 +800,7 @@ export default function App() {
     // stale error banner from whatever was previously open.
     setSelectedDiagramId(null); setSelectedDiagramXml(null); setBpmnDirty(false);
     setNewDiagramName(''); setNewDiagramProjectKey(projects[0]?.key || '');
+    setCommitMessage('');
     bpmnVersionRef.current = null;   // +
     setBpmnConflict(null);           // +
   }
@@ -832,6 +836,7 @@ export default function App() {
       setBpmnDirty(false);
       setBpmnConflict(null);
       setVersionName('');
+      setCommitMessage('');
       setEditorOpen(true);                     // mounts the modal + canvas
       invoke('touchBpmnVersion', { diagramId: rec.id, version: versionNumber }).catch(() => {});
     } catch (e) {
@@ -847,12 +852,14 @@ export default function App() {
         xml,
         baseVersion: viewingVersion ?? openDiagramMeta?.version ?? null,
         versionName: versionName.trim(),
+        message: commitMessage.trim(),
       };
       const rec = await invoke('saveBpmnDiagram', payload);
       setSelectedDiagramId(rec.id);
       upsertDiagramMeta(rec);
       setViewingVersion(rec.version);
       setVersionName('');
+      setCommitMessage('');
       setVersions(normalizeVersions(rec));
       setBpmnConflict(null);
       setSrAnnouncement(`Saved ${rec.latestVersionName || `v${rec.version}`}`);
@@ -2477,6 +2484,8 @@ export default function App() {
             onSelectVersion={loadBpmnVersion}
             versionName={versionName}
             onVersionNameChange={setVersionName}
+            commitMessage={commitMessage}
+            onCommitMessageChange={setCommitMessage}
             diagramId={selectedDiagramId}
             projectKey={openDiagramMeta?.projectKey || newDiagramProjectKey}
             realtimeEvent={realtimeEvent}

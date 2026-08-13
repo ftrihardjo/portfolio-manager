@@ -185,6 +185,7 @@ export default function BpmnDiagramView({
   showNavigator: showNavigatorProp, onToggleNavigator,
   sideCollapsed, onToggleSide, onSideNeeded,
   versions, viewingVersion, onSelectVersion, versionName, onVersionNameChange,
+  commitMessage, onCommitMessageChange,
   diagramId, projectKey, realtimeEvent,
   onOpenVersionList,   // ★ NEW — closes the modal and shows the version list
 }) {
@@ -452,6 +453,14 @@ export default function BpmnDiagramView({
                     placeholder="version name (e.g. release-1.0)"
                     value={versionName || ''}
                     onChange={(e) => onVersionNameChange && onVersionNameChange(e.target.value)} />
+                </label>
+                <label className="bpmn-tb-label bpmn-tb-commit-message" htmlFor="bpmn-commit-message"
+                  title="Optional: describe what changed in this save, like a git commit message">
+                  <span className="bpmn-tb-label-text">Message</span>
+                  <input id="bpmn-commit-message" type="text" data-testid="bpmn-commit-message"
+                    placeholder="what changed (optional)"
+                    value={commitMessage || ''}
+                    onChange={(e) => onCommitMessageChange && onCommitMessageChange(e.target.value)} />
                 </label>
               </div>
             )}

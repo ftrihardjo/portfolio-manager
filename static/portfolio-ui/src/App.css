@@ -442,6 +442,8 @@
 .bpmn-tb-btn.active { background: var(--ads-blue-subtle, #deebff); color: var(--ads-blue, #0052cc); }
 .bpmn-tb-version-name { display: inline-flex; align-items: center; gap: 6px; }
 .bpmn-tb-version-name input { height: 30px; min-width: 150px; max-width: 200px; }
+.bpmn-tb-commit-message { display: inline-flex; align-items: center; gap: 6px; }
+.bpmn-tb-commit-message input { height: 30px; min-width: 180px; max-width: 260px; }
 .bpmn-tb-label-text { font-size: 12px; color: var(--ads-text-sub, #6b778c); white-space: nowrap; }
 
 /* ============================================================
