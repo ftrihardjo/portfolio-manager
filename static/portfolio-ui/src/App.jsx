@@ -581,6 +581,18 @@ export default function App() {
   const [viewingVersion, setViewingVersion] = useState(null);
   const [versionName, setVersionName] = useState('');  const bpmnDirtyRef = useRef(false);
   const [commitMessage, setCommitMessage] = useState('');
+  const [activationStatus, setActivationStatus] = useState(null);
+
+  const checkActivationStatus = async () => {
+    try { setActivationStatus(await invoke('getMyActivationStatus')); }
+    catch (e) { setError(e.message); }
+  };
+  const resetActivationStatus = async () => {
+    try {
+      await invoke('resetMyActivationStatus');
+      setActivationStatus(await invoke('getMyActivationStatus'));
+    } catch (e) { setError(e.message); }
+  };
   useEffect(() => { bpmnDirtyRef.current = bpmnDirty; }, [bpmnDirty]);
   // Collaborative editing via polling (Forge has no push channel). We poll the
   // cheap index; on a version change we either auto-reload (no local edits) or
@@ -1640,6 +1652,18 @@ export default function App() {
         <button onClick={() => setLayoutDir(prev => prev === 'ltr' ? 'rtl' : 'ltr')} style={{ fontSize: '11px' }}>
           Toggle Language Direction
         </button>
+        <button onClick={checkActivationStatus} style={{ fontSize: '11px' }} data-testid="check-activation-status">
+          Check Activation Flags
+        </button>
+        {activationStatus && (
+          <span style={{ fontSize: '11px', color: 'var(--ads-text-sub, #6b778c)' }}>
+            firstDiagram: {String(activationStatus.firstDiagramDone)}, firstRule: {String(activationStatus.firstRuleDone)}
+            {' '}
+            <button onClick={resetActivationStatus} style={{ fontSize: '11px' }} data-testid="reset-activation-status">
+              Reset (testing only)
+            </button>
+          </span>
+        )}
       </div>
 
       {activeTab === 'projects' && (
@@ -2320,6 +2344,7 @@ export default function App() {
                     )}
                     {filteredBpmnDiagrams.map(d => {
                       const isOwner = editableProjectKeys.has(d.projectKey);
+                      const isOrphaned = d.projectExists === false;
                       return (
                         <li key={d.id} style={{ marginBottom: '6px' }}>
                           <button
@@ -2327,7 +2352,7 @@ export default function App() {
                             style={{
                               display: 'block', width: '100%', textAlign: 'left',
                               background: selectedDiagramId === d.id ? '#e6effc' : 'none',
-                              border: '1px solid #ddd', borderRadius: '4px',
+                              border: isOrphaned ? '1px solid #ffab00' : '1px solid #ddd', borderRadius: '4px',
                               padding: '6px 8px', cursor: 'pointer',
                             }}
                           >
@@ -2335,8 +2360,14 @@ export default function App() {
                             <div style={{ fontSize: '11px', color: '#666' }}>
                               {d.projectKey} {isOwner ? '· you can edit' : '· view only'}
                             </div>
+                            {isOrphaned && (
+                              <div data-testid={`orphaned-badge-${d.id}`}
+                                style={{ fontSize: '11px', color: '#974f0c', marginTop: '2px' }}>
+                                ⚠ Project deleted — read-only, no one can edit this anymore
+                              </div>
+                            )}
                           </button>
-                          {isOwner && (
+                          {(isOwner || isOrphaned) && (
                             <button
                               onClick={() => deleteBpmnDiagram(d.id)}
                               data-testid={`delete-bpmn-${d.id}`}

@@ -263,6 +263,28 @@ async function canEditProject(projectKey, accountId) {
   return !!perms.permissions?.EDIT_ISSUES?.havePermission;
 }
 
+// Jira has no Forge trigger for project deletion (only issue- and
+// board-level delete events exist), so there's no way to react to a
+// project being deleted as it happens. Diagrams keep working fine
+// afterward — canEditProject naturally starts returning false once the
+// project's gone, so edits are already blocked — but nothing ever stopped
+// the diagram from being freely opened and viewed indefinitely. This
+// checks project existence on demand instead, so the list/UI can flag it.
+async function projectKeyExists(projectKey) {
+  if (!projectKey) return false;
+  try {
+    const res = await api.asUser().requestJira(
+      route`/rest/api/3/project/${projectKey}`,
+      { headers: { Accept: 'application/json' } }
+    );
+    return res.ok;
+  } catch (e) {
+    // Network/API hiccup: don't misreport a real project as deleted.
+    console.error('projectKeyExists check failed (non-fatal):', e);
+    return true;
+  }
+}
+
 resolver.define('getCurrentUser', async ({ context }) => ({
   accountId: context?.accountId ?? null,
 }));
@@ -274,7 +296,37 @@ resolver.define('canEditProject', async ({ payload, context }) => {
   return { canEdit: await canEditProject(projectKey, accountId) };
 });
 
-resolver.define('getBpmnDiagrams', async () => (await kvs.get(BPMN_INDEX_KEY)) || []);
+// Self-service diagnostic for the per-user PLG activation flags. Lets a
+// person confirm their own account's state (or reset it for testing)
+// without needing KVS/console access. Scoped to context.accountId only —
+// nobody can read or reset another account's flags.
+resolver.define('getMyActivationStatus', async ({ context }) => {
+  const accountId = context?.accountId ?? null;
+  if (!accountId) return { firstDiagramDone: false, firstRuleDone: false };
+  const [firstDiagramDone, firstRuleDone] = await Promise.all([
+    kvs.get(`activation:firstDiagram:${accountId}`),
+    kvs.get(`activation:firstRule:${accountId}`),
+  ]);
+  return { firstDiagramDone: !!firstDiagramDone, firstRuleDone: !!firstRuleDone };
+});
+
+resolver.define('resetMyActivationStatus', async ({ context }) => {
+  const accountId = context?.accountId ?? null;
+  if (!accountId) return { ok: false };
+  await Promise.all([
+    kvs.delete(`activation:firstDiagram:${accountId}`),
+    kvs.delete(`activation:firstRule:${accountId}`),
+  ]);
+  return { ok: true };
+});
+
+resolver.define('getBpmnDiagrams', async () => {
+  const diagrams = (await kvs.get(BPMN_INDEX_KEY)) || [];
+  const distinctKeys = [...new Set(diagrams.map((d) => d.projectKey).filter(Boolean))];
+  const existsByKey = {};
+  await Promise.all(distinctKeys.map(async (key) => { existsByKey[key] = await projectKeyExists(key); }));
+  return diagrams.map((d) => ({ ...d, projectExists: d.projectKey ? !!existsByKey[d.projectKey] : true }));
+});
 
 resolver.define('getBpmnDiagram', async ({ payload }) => {
   const diagram = await kvs.get(bpmnDiagramKey(payload.diagramId));
@@ -295,6 +347,7 @@ resolver.define('getBpmnDiagram', async ({ payload }) => {
     }
     diagram.lastEditedByDisplay = cache[diagram.lastEditedBy] || diagram.lastEditedBy || 'Unknown';
   }
+  diagram.projectExists = diagram.projectKey ? await projectKeyExists(diagram.projectKey) : true;
   return diagram;
 });
 
@@ -420,8 +473,18 @@ resolver.define('deleteBpmnDiagram', async ({ payload, context }) => {
   const accountId = context?.accountId ?? null;
   const diagram = await kvs.get(bpmnDiagramKey(diagramId));
   if (!diagram) return { deleted: false };
-  if (!(await canEditProject(diagram.projectKey, accountId))) {
-    throw new Error('You need edit permission on this project to delete this diagram.');
+  // If the diagram's project no longer exists at all, canEditProject can
+  // never return true for it (Jira's permission check has nothing to check
+  // against) — that would leave orphaned diagrams permanently undeletable
+  // by anyone. In that specific case, allow any authenticated user to
+  // clean it up rather than requiring live project-edit permission.
+  const projectStillExists = await projectKeyExists(diagram.projectKey);
+  if (projectStillExists) {
+    if (!(await canEditProject(diagram.projectKey, accountId))) {
+      throw new Error('You need edit permission on this project to delete this diagram.');
+    }
+  } else if (!accountId) {
+    throw new Error('You must be signed in to delete this diagram.');
   }
   await kvs.delete(bpmnDiagramKey(diagramId));
   const index = (await kvs.get(BPMN_INDEX_KEY)) || [];

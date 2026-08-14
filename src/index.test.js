@@ -394,6 +394,12 @@ describe('BPMN diagrams (getCurrentUser, getBpmnDiagrams, getBpmnDiagram, saveBp
     mockJiraResponse({ permissions: { EDIT_ISSUES: { havePermission: canEdit } } });
   }
 
+  // projectKeyExists() just checks res.ok — body content is irrelevant.
+  function mockProjectExists(exists) {
+    if (exists) mockJiraResponse({});
+    else mockJiraError(404, 'Not Found');
+  }
+
   it('returns the calling user\'s accountId from context', async () => {
     const result = await getResolver('getCurrentUser')({ context: { accountId: 'me-123' } });
     expect(result).toEqual({ accountId: 'me-123' });
@@ -416,6 +422,7 @@ describe('BPMN diagrams (getCurrentUser, getBpmnDiagrams, getBpmnDiagram, saveBp
     expect(result.id).toBeTruthy();
     expect(result.createdAt).toBe(result.updatedAt);
 
+    mockProjectExists(true);
     const index = await getResolver('getBpmnDiagrams')({});
     // ← CHANGED: added lastEditedByDisplay (falls back to raw accountId in tests)
     expect(index).toEqual([{
@@ -427,6 +434,7 @@ describe('BPMN diagrams (getCurrentUser, getBpmnDiagrams, getBpmnDiagram, saveBp
       lastEditedByDisplay: 'lead-acc-1',
       version: 1,
       latestVersionName: 'v1',
+      projectExists: true,
     }]);
   });
 
@@ -468,6 +476,7 @@ describe('BPMN diagrams (getCurrentUser, getBpmnDiagrams, getBpmnDiagram, saveBp
     expect(updated.name).toBe('v2');
     expect(updated.createdAt).toBe(created.createdAt);
 
+    mockProjectExists(true);
     const index = await getResolver('getBpmnDiagrams')({});
     expect(index).toHaveLength(1);
     expect(index[0].name).toBe('v2');
@@ -480,17 +489,61 @@ describe('BPMN diagrams (getCurrentUser, getBpmnDiagrams, getBpmnDiagram, saveBp
       context: { accountId: LEAD_ACCOUNT_ID },
     });
 
+    mockProjectExists(true);
     const fetched = await getResolver('getBpmnDiagram')({ payload: { diagramId: created.id } });
     // saveBpmnDiagram's response includes a transient firstDiagramForUser
     // flag (for the frontend's PLG event choice) that's intentionally not
-    // persisted to KVS, so the fetched record won't carry it.
+    // persisted to KVS, so the fetched record won't carry it. getBpmnDiagram
+    // also adds a fresh projectExists check that saveBpmnDiagram doesn't do.
     const { firstDiagramForUser, ...persisted } = created;
     expect(firstDiagramForUser).toBe(true);
-    expect(fetched).toEqual(persisted);
+    expect(fetched).toEqual({ ...persisted, projectExists: true });
 
     await expect(
       getResolver('getBpmnDiagram')({ payload: { diagramId: 'does-not-exist' } })
     ).rejects.toThrow('Diagram does-not-exist not found');
+  });
+
+  it('getMyActivationStatus reports false/false for a fresh account, then reflects real activity', async () => {
+    const fresh = await getResolver('getMyActivationStatus')({ context: { accountId: 'fresh-acc' } });
+    expect(fresh).toEqual({ firstDiagramDone: false, firstRuleDone: false });
+
+    mockCanEdit(true);
+    await getResolver('saveBpmnDiagram')({
+      payload: { diagramId: null, name: 'D', projectKey: 'TEST', xml: '<xml/>' },
+      context: { accountId: 'fresh-acc' },
+    });
+
+    const afterSave = await getResolver('getMyActivationStatus')({ context: { accountId: 'fresh-acc' } });
+    expect(afterSave).toEqual({ firstDiagramDone: true, firstRuleDone: false });
+  });
+
+  it('getMyActivationStatus never reflects another account\'s flags', async () => {
+    mockCanEdit(true);
+    await getResolver('saveBpmnDiagram')({
+      payload: { diagramId: null, name: 'D', projectKey: 'TEST', xml: '<xml/>' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+
+    const other = await getResolver('getMyActivationStatus')({ context: { accountId: OTHER_ACCOUNT_ID } });
+    expect(other).toEqual({ firstDiagramDone: false, firstRuleDone: false });
+  });
+
+  it('resetMyActivationStatus clears only the calling account\'s flags', async () => {
+    mockCanEdit(true);
+    await getResolver('saveBpmnDiagram')({
+      payload: { diagramId: null, name: 'D', projectKey: 'TEST', xml: '<xml/>' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+    expect(await getResolver('getMyActivationStatus')({ context: { accountId: LEAD_ACCOUNT_ID } })).toEqual({
+      firstDiagramDone: true, firstRuleDone: false,
+    });
+
+    const resetResult = await getResolver('resetMyActivationStatus')({ context: { accountId: LEAD_ACCOUNT_ID } });
+    expect(resetResult).toEqual({ ok: true });
+    expect(await getResolver('getMyActivationStatus')({ context: { accountId: LEAD_ACCOUNT_ID } })).toEqual({
+      firstDiagramDone: false, firstRuleDone: false,
+    });
   });
 
   it('flags firstDiagramForUser only for that user\'s first save, not the tenant\'s', async () => {
@@ -529,6 +582,7 @@ describe('BPMN diagrams (getCurrentUser, getBpmnDiagrams, getBpmnDiagram, saveBp
       context: { accountId: LEAD_ACCOUNT_ID },
     });
 
+    mockProjectExists(true);
     mockCanEdit(true);
     const result = await getResolver('deleteBpmnDiagram')({
       payload: { diagramId: created.id },
@@ -549,6 +603,7 @@ describe('BPMN diagrams (getCurrentUser, getBpmnDiagrams, getBpmnDiagram, saveBp
       context: { accountId: LEAD_ACCOUNT_ID },
     });
 
+    mockProjectExists(true);
     mockCanEdit(false);
     await expect(
       getResolver('deleteBpmnDiagram')({
@@ -556,6 +611,7 @@ describe('BPMN diagrams (getCurrentUser, getBpmnDiagrams, getBpmnDiagram, saveBp
         context: { accountId: OTHER_ACCOUNT_ID },
       })
     ).rejects.toThrow('You need edit permission on this project to delete this diagram.');
+    mockProjectExists(true);
     expect(await getResolver('getBpmnDiagrams')({})).toHaveLength(1);
   });
 
@@ -565,6 +621,43 @@ describe('BPMN diagrams (getCurrentUser, getBpmnDiagrams, getBpmnDiagram, saveBp
       context: { accountId: LEAD_ACCOUNT_ID },
     });
     expect(result).toEqual({ deleted: false });
+  });
+
+  it('allows any authenticated user to delete a diagram whose project no longer exists', async () => {
+    mockCanEdit(true);
+    const created = await getResolver('saveBpmnDiagram')({
+      payload: { diagramId: null, name: 'Orphaned', projectKey: 'GONE', xml: '<xml/>' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+
+    // The project is gone — projectKeyExists returns false — so this must
+    // succeed WITHOUT ever calling canEditProject (a deleted project could
+    // never grant permission, which would otherwise trap the diagram
+    // forever). Someone entirely unrelated to the original project can
+    // clean it up.
+    mockProjectExists(false);
+    const result = await getResolver('deleteBpmnDiagram')({
+      payload: { diagramId: created.id },
+      context: { accountId: 'random-unrelated-account' },
+    });
+
+    expect(result).toEqual({ deleted: true });
+  });
+
+  it('still requires a signed-in user to delete an orphaned diagram', async () => {
+    mockCanEdit(true);
+    const created = await getResolver('saveBpmnDiagram')({
+      payload: { diagramId: null, name: 'Orphaned', projectKey: 'GONE', xml: '<xml/>' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+
+    mockProjectExists(false);
+    await expect(
+      getResolver('deleteBpmnDiagram')({
+        payload: { diagramId: created.id },
+        context: {},
+      })
+    ).rejects.toThrow('You must be signed in to delete this diagram.');
   });
 
     it('revertBpmnDiagram appends a new "revert" commit copying the target XML, keeping history intact', async () => {

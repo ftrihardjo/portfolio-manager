@@ -1129,6 +1129,34 @@ describe('App', () => {
       await waitFor(() => expect(screen.getByTestId('delete-bpmn-diagram-1')).toBeInTheDocument());
       expect(screen.queryByTestId('delete-bpmn-diagram-2')).not.toBeInTheDocument();
     });
+
+    it('shows a "Project deleted" badge and still allows Delete when a diagram\'s project no longer exists', async () => {
+      mockInvoke({
+        getProjects: projectsMock,
+        getCurrentUser: { accountId: 'acc-lead' },
+        getBpmnDiagrams: [
+          { id: 'diagram-1', name: 'Still alive', projectKey: 'PROJ1', updatedAt: '2026-01-01', projectExists: true },
+          { id: 'diagram-2', name: 'Orphaned', projectKey: 'GONE', updatedAt: '2026-01-01', projectExists: false },
+        ],
+        // A deleted project can never grant edit permission, so this
+        // correctly returns false for it — the point of the fix is that
+        // Delete still shows up anyway for orphaned diagrams.
+        canEditProject: ({ projectKey }) => ({ canEdit: projectKey === 'PROJ1' }),
+      });
+
+      render(<App />);
+      await waitFor(() => screen.getByText('Alpha'));
+      fireEvent.click(screen.getByRole('tab', { name: /BPMN/i }));
+      await waitFor(() => screen.getByText('Still alive'));
+
+      expect(screen.getByTestId('orphaned-badge-diagram-2')).toBeInTheDocument();
+      expect(screen.queryByTestId('orphaned-badge-diagram-1')).not.toBeInTheDocument();
+
+      // Both are deletable: PROJ1 via normal edit permission, GONE because
+      // its project no longer exists (backend allows anyone to clean it up).
+      await waitFor(() => expect(screen.getByTestId('delete-bpmn-diagram-1')).toBeInTheDocument());
+      expect(screen.getByTestId('delete-bpmn-diagram-2')).toBeInTheDocument();
+    });
   });
 
   // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
