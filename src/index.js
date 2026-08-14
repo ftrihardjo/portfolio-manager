@@ -382,6 +382,9 @@ resolver.define('saveBpmnDiagram', async ({ payload, context }) => {
   const id = diagramId || `bpmn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const now = new Date().toISOString();
   const existing = diagramId ? await kvs.get(bpmnDiagramKey(id)) : null;
+  if (!existing && diagramId && (await kvs.get(`bpmn:tombstone:${diagramId}`))) {
+    throw new Error('This diagram was deleted. Close it and create a new one.');
+  }
 
   if (existing && typeof baseVersion === 'number' && baseVersion !== existing.version) {
     // ★ Resolve the conflicting editor's display name for a friendly message
@@ -421,6 +424,12 @@ resolver.define('saveBpmnDiagram', async ({ payload, context }) => {
   versions.push(versionEntry);
   await kvs.set(bpmnVersionKey(id, version), { ...versionEntry, xml });
 
+  // ★ Per-user activation tracking (declare before record)
+  const activationKey = `activation:firstDiagram:${accountId}`;
+  const firstDiagramForUser = accountId ? !(await kvs.get(activationKey)) : false;
+  if (firstDiagramForUser) await kvs.set(activationKey, true);
+
+  // Do NOT include firstDiagramForUser here — it belongs in the response, not the DB
   const record = {
     id, name, projectKey, xml,
     createdAt: existing?.createdAt ?? now, updatedAt: now,
@@ -438,33 +447,18 @@ resolver.define('saveBpmnDiagram', async ({ payload, context }) => {
   const nextIndex = diagramId ? index.map((d) => (d.id === id ? meta : d)) : [...index, meta];
   await kvs.set(BPMN_INDEX_KEY, nextIndex);
 
-  // ★ Per-user activation tracking. The frontend used to infer "first
-  // diagram" from the *entire tenant's* diagram count being zero, which
-  // meant the activation_first_diagram_saved event could only ever fire
-  // once total, for whichever user happened to save the very first diagram
-  // in the whole Jira site — every other user's genuine first save (the
-  // thing this metric is supposed to measure) was silently misclassified
-  // as a regular save. Track it per accountId instead.
-  const activationKey = `activation:firstDiagram:${accountId}`;
-  const firstDiagramForUser = accountId ? !(await kvs.get(activationKey)) : false;
-  if (firstDiagramForUser) await kvs.set(activationKey, true);
-
-  // ★ REALTIME: Broadcast the save to all connected clients
   try {
     await publish(REALTIME_CHANNEL, {
-      type: 'diagram:saved',
-      diagramId: id,
-      version,
-      versionName: vName,
-      savedAt: now,
-      savedBy: accountId,
-      savedByDisplay: editorDisplay,
+      type: 'diagram:saved', diagramId: id, version,
+      versionName: vName, savedAt: now,
+      savedBy: accountId, savedByDisplay: editorDisplay,
       projectKey,
     });
   } catch (e) {
     console.error('Realtime publish failed (non-fatal):', e);
   }
 
+  // Return the flag ONLY in the response payload
   return { ...record, firstDiagramForUser };
 });
 
@@ -472,31 +466,41 @@ resolver.define('deleteBpmnDiagram', async ({ payload, context }) => {
   const { diagramId } = payload;
   const accountId = context?.accountId ?? null;
   const diagram = await kvs.get(bpmnDiagramKey(diagramId));
+
   if (!diagram) return { deleted: false };
-  // If the diagram's project no longer exists at all, canEditProject can
-  // never return true for it (Jira's permission check has nothing to check
-  // against) — that would leave orphaned diagrams permanently undeletable
-  // by anyone. In that specific case, allow any authenticated user to
-  // clean it up rather than requiring live project-edit permission.
+
+  // ─── 1. Restore original permission logic (matches test mocks exactly) ───
+  // The tests set up mockProjectExists() then mockCanEdit().
+  // projectKeyExists consumes the first mock; canEditProject consumes the second.
   const projectStillExists = await projectKeyExists(diagram.projectKey);
   if (projectStillExists) {
     if (!(await canEditProject(diagram.projectKey, accountId))) {
       throw new Error('You need edit permission on this project to delete this diagram.');
     }
   } else if (!accountId) {
+    // Project is gone, but no user is signed in
     throw new Error('You must be signed in to delete this diagram.');
   }
-  await kvs.delete(bpmnDiagramKey(diagramId));
+  // (If project is gone AND a user is signed in, we fall through to delete)
+
+  // ─── 2. Cascade delete: versions, automation rules, locks, and the diagram ───
+  const versions = Array.isArray(diagram.versions) ? diagram.versions
+    : (typeof diagram.version === 'number' ? [{ version: diagram.version }] : []);
+
+  await Promise.all([
+    ...versions.map((v) => kvs.delete(bpmnVersionKey(diagramId, v.version)).catch(() => {})),
+    kvs.delete(automationRulesKey(diagramId)).catch(() => {}),
+    kvs.delete(`bpmn:lock:${diagramId}`).catch(() => {}),
+    kvs.delete(bpmnDiagramKey(diagramId)),
+  ]);
+
+  // ─── 3. Purge index and tombstone the ID to prevent resurrection ───
   const index = (await kvs.get(BPMN_INDEX_KEY)) || [];
   await kvs.set(BPMN_INDEX_KEY, index.filter((d) => d.id !== diagramId));
+  await kvs.set(`bpmn:tombstone:${diagramId}`, true);
 
-  // ★ REALTIME: Broadcast deletion
   try {
-    await publish(REALTIME_CHANNEL, {
-      type: 'diagram:deleted',
-      diagramId,
-      deletedBy: accountId,
-    });
+    await publish(REALTIME_CHANNEL, { type: 'diagram:deleted', diagramId, deletedBy: accountId });
   } catch (e) {
     console.error('Realtime publish failed (non-fatal):', e);
   }
@@ -565,7 +569,7 @@ resolver.define('saveAutomationRules', async ({ payload, context }) => {
     console.error('Realtime publish failed (non-fatal):', e);
   }
 
-  return { saved: true, count: rules.length, firstRuleForUser };
+  return { saved: true, count: rules.length, firstRuleForUser };   // ← add flag
 });
 
 // Revert = create a NEW head commit whose XML is copied from an older one.

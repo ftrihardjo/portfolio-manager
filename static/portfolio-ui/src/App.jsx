@@ -581,18 +581,6 @@ export default function App() {
   const [viewingVersion, setViewingVersion] = useState(null);
   const [versionName, setVersionName] = useState('');  const bpmnDirtyRef = useRef(false);
   const [commitMessage, setCommitMessage] = useState('');
-  const [activationStatus, setActivationStatus] = useState(null);
-
-  const checkActivationStatus = async () => {
-    try { setActivationStatus(await invoke('getMyActivationStatus')); }
-    catch (e) { setError(e.message); }
-  };
-  const resetActivationStatus = async () => {
-    try {
-      await invoke('resetMyActivationStatus');
-      setActivationStatus(await invoke('getMyActivationStatus'));
-    } catch (e) { setError(e.message); }
-  };
   useEffect(() => { bpmnDirtyRef.current = bpmnDirty; }, [bpmnDirty]);
   // Collaborative editing via polling (Forge has no push channel). We poll the
   // cheap index; on a version change we either auto-reload (no local edits) or
@@ -867,6 +855,9 @@ export default function App() {
         message: commitMessage.trim(),
       };
       const rec = await invoke('saveBpmnDiagram', payload);
+      if (rec.firstDiagramForUser) {
+        PLG.track(Events.FIRST_DIAGRAM_SAVED, { projectKey: rec.projectKey });
+      }
       setSelectedDiagramId(rec.id);
       upsertDiagramMeta(rec);
       setViewingVersion(rec.version);
@@ -912,7 +903,13 @@ export default function App() {
       if (selectedDiagramId === diagramId) {
         setSelectedDiagramId(null);
         setSelectedDiagramXml(null);
+        setVersions([]);
+        setViewingVersion(null);
+        setHistoryRecord(null);
+        setCompareBase(null);
+        setVersionDiff(null);
       }
+      try { localStorage.removeItem(`automation:draft:${diagramId}`); } catch {}
       await loadBpmnDiagrams();
     } catch (e) {
       setError('Failed to delete diagram: ' + e.message);
@@ -1652,18 +1649,6 @@ export default function App() {
         <button onClick={() => setLayoutDir(prev => prev === 'ltr' ? 'rtl' : 'ltr')} style={{ fontSize: '11px' }}>
           Toggle Language Direction
         </button>
-        <button onClick={checkActivationStatus} style={{ fontSize: '11px' }} data-testid="check-activation-status">
-          Check Activation Flags
-        </button>
-        {activationStatus && (
-          <span style={{ fontSize: '11px', color: 'var(--ads-text-sub, #6b778c)' }}>
-            firstDiagram: {String(activationStatus.firstDiagramDone)}, firstRule: {String(activationStatus.firstRuleDone)}
-            {' '}
-            <button onClick={resetActivationStatus} style={{ fontSize: '11px' }} data-testid="reset-activation-status">
-              Reset (testing only)
-            </button>
-          </span>
-        )}
       </div>
 
       {activeTab === 'projects' && (

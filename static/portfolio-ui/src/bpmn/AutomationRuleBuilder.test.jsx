@@ -129,4 +129,31 @@ describe('AutomationRuleBuilder PLG + persistence', () => {
     await screen.findAllByText('Untitled Rule');
     expect(screen.queryByTestId('draft-restored')).toBeNull();
   });
+
+  it('fires activation_first_rule_created only when backend reports first rule', async () => {
+    invokeMock.mockImplementation(async (cmd, payload = {}) => {
+      if (cmd === 'getAutomationRules') return [];
+      if (cmd === 'saveAutomationRules')
+        return { saved: true, count: payload.rules.length, firstRuleForUser: true };
+      return { ok: true };
+    });
+    render(<AutomationRuleBuilder {...props} />);
+    fireEvent.click(await screen.findByTestId('add-rule'));
+    fireEvent.click(screen.getByTestId('save-rules'));
+    await waitFor(() => expect(tracked()).toContain(Events.FIRST_RULE_CREATED));
+  });
+
+  it('does not fire activation event on subsequent saves', async () => {
+    invokeMock.mockImplementation(async (cmd, payload = {}) => {
+      if (cmd === 'getAutomationRules') return [];
+      if (cmd === 'saveAutomationRules')
+        return { saved: true, count: payload.rules.length, firstRuleForUser: false };
+      return { ok: true };
+    });
+    render(<AutomationRuleBuilder {...props} />);
+    fireEvent.click(await screen.findByTestId('add-rule'));
+    fireEvent.click(screen.getByTestId('save-rules'));
+    await waitFor(() => expect(tracked()).toContain(Events.AUTOMATION_RULE_CREATED));
+    expect(tracked()).not.toContain(Events.FIRST_RULE_CREATED);
+  });
 });
