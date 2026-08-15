@@ -34,9 +34,8 @@
     "test": "jest",
     "build:ui": "npm --prefix static/portfolio-ui run build",
     "deploy": "npm run build:ui && forge deploy",
-    "stage": "npm run build:ui && forge deploy -e staging",
     "deploy:upgrade": "npm run build:ui && forge deploy && forge install --upgrade",
-    "stage:upgrade": "npm run build:ui && forge deploy -e staging && forge install --upgrade"
+    "stage:upgrade": "npm run build:ui && forge install --upgrade -e staging -s felixtrihardjo.atlassian.net -p jira"
   },
   "jest": {
     "transform": {

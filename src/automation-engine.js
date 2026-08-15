@@ -100,14 +100,14 @@ function evaluateCondition(cond, issue) {
   const fields = issue.fields || {};
   let fieldValue;
 
-  switch (cond.field) {
+  switch (String(cond.field || '').toLowerCase()) {
     case 'status': fieldValue = fields.status?.name; break;
     case 'priority': fieldValue = fields.priority?.name; break;
-    case 'issueType': fieldValue = fields.issuetype?.name; break;
+    case 'issuetype': fieldValue = fields.issuetype?.name; break;
     case 'assignee': fieldValue = fields.assignee?.displayName; break;
     case 'labels': fieldValue = (fields.labels || []).join(','); break;
     case 'components': fieldValue = (fields.components || []).map(c => c.name).join(','); break;
-    case 'customField': fieldValue = fields[cond.value]; break;
+    case 'customfield': fieldValue = fields[cond.value]; break;
     default: fieldValue = '';
   }
 
@@ -137,7 +137,7 @@ function evaluateDecisionTable(table, issue) {
     for (const input of table.inputs) {
       const condValue = row[input.id];
       if (!condValue) continue; // Empty cell matches all
-      const mappedField = input.label.toLowerCase().replace(' ', '');
+      const mappedField = input.label.toLowerCase().replace(/\s+/g, '');
       const fakeCond = { field: mappedField, operator: 'equals', value: condValue };
       if (!evaluateCondition(fakeCond, issue)) {
         allInputsMatch = false;

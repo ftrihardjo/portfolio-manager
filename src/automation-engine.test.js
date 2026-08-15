@@ -153,6 +153,51 @@ describe('Automation Engine', () => {
         expect(evaluateDecisionTable(autoTriageTable, issue)).toEqual([]);
       });
     });
+
+    // Regression tests for two related bugs found while patching:
+    //  1. Multi-word input labels ("Issue Type") kept an internal space after
+    //     `.replace(' ', '')` only stripped the first one, so the mapped field
+    //     name never matched any real switch case in evaluateCondition.
+    //  2. Even single-word camelCase field names ("issueType", "customField")
+    //     never matched because evaluateCondition's switch cases were
+    //     camelCase while the decision-table mapper always produced fully
+    //     lowercased strings — a case-sensitive switch never bridges the two.
+    describe('multi-word and camelCase input labels (regression)', () => {
+      test('a two-word label like "Issue Type" matches the issuetype field', () => {
+        const table = {
+          hitPolicy: 'FIRST',
+          inputs: [{ id: 'in1', label: 'Issue Type' }],
+          outputs: [{ id: 'out1', label: 'Action' }],
+          rows: [{ in1: 'Bug', out1: 'transition: In Progress' }],
+        };
+        const issue = { fields: { ...mockIssue.fields, issuetype: { name: 'Bug' } } };
+        expect(evaluateDecisionTable(table, issue)).toEqual([
+          { type: 'transition', config: { value: 'In Progress' } },
+        ]);
+      });
+
+      test('a two-word label like "Custom Field" resolves via the customfield case', () => {
+        const table = {
+          hitPolicy: 'FIRST',
+          inputs: [{ id: 'in1', label: 'Custom Field' }],
+          outputs: [{ id: 'out1', label: 'Action' }],
+          rows: [{ in1: 'some-value', out1: 'Escalated' }],
+        };
+        // evaluateCondition's customfield case reads fields[cond.value], where
+        // cond.value is the row's own cell content — mirrors existing behavior.
+        const issue = { fields: { ...mockIssue.fields, 'some-value': 'some-value' } };
+        expect(evaluateDecisionTable(table, issue)).toEqual([
+          { type: 'add_comment', config: { value: 'Escalated' } },
+        ]);
+      });
+
+      test('manual rule conditions using UI-exact camelCase ("issueType") still work', () => {
+        const issue = { fields: { ...mockIssue.fields, issuetype: { name: 'Bug' } } };
+        expect(
+          evaluateCondition({ field: 'issueType', operator: 'equals', value: 'Bug' }, issue),
+        ).toBe(true);
+      });
+    });
   });
 
   // ─── Integration Test: Main Engine Execution ─────────────────────────────
