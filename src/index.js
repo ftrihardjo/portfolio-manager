@@ -707,7 +707,7 @@ const GA_MEASUREMENT_ID = 'G-9FFJELQ6BR';
 // TODO: move off the hardcoded fallback — run
 //   forge variables set --encrypt GA_API_SECRET <secret>
 // then this reads it via process.env instead of shipping it in source.
-const GA_API_SECRET = process.env.GA_API_SECRET || 't_irWikPRiK4b7-hMnWgMw';
+const GA_API_SECRET = process.env.GA_API_SECRET;
 
 resolver.define('trackPlgEvent', async ({ payload, context }) => {
   const { name, params = {}, clientId } = payload;
