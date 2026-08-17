@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DMN Decision Tables — User Guide | BPMN, Workflow Automation &amp; Portfolio Manager</title>
+  <meta name="description" content="User guide for DMN-inspired decision tables in the BPMN, Workflow Automation & Portfolio Manager Atlassian Marketplace app." />
+  <style>
+    :root {
+      --bg: #ffffff;
+      --surface: #f7f8fa;
+      --surface-2: #ebecf0;
+      --border: #dfe1e6;
+      --text: #172b4d;
+      --text-muted: #5e6c84;
+      --primary: #0052cc;
+      --primary-bg: #deebff;
+      --success: #00875a;
+      --success-bg: #e3fcef;
+      --warning: #974f0c;
+      --warning-bg: #fffae6;
+      --danger: #de350b;
+      --danger-bg: #ffebe6;
+      --code-bg: #091e42;
+      --code-text: #f4f5f7;
+      --radius: 8px;
+      --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0b1426;
+        --surface: #111a2c;
+        --surface-2: #1c2a44;
+        --border: #2c3e5f;
+        --text: #dfe1e6;
+        --text-muted: #9fadbc;
+        --primary: #4c9aff;
+        --primary-bg: #0e2a4d;
+        --success: #57d9a3;
+        --success-bg: #0e3a28;
+        --warning: #e8b355;
+        --warning-bg: #3a2e10;
+        --danger: #ff8f73;
+        --danger-bg: #3d1a14;
+        --code-bg: #050b18;
+        --code-text: #e6edf3;
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      color: var(--text);
+      background: var(--bg);
+      line-height: 1.6;
+      font-size: 16px;
+    }
+
+    a { color: var(--primary); }
+
+    /* Layout */
+    .layout {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      max-width: 1200px;
+      margin: 0 auto;
+      gap: 0;
+    }
+
+    /* Sidebar */
+    aside.sidebar {
+      position: sticky;
+      top: 0;
+      align-self: start;
+      max-height: 100vh;
+      overflow-y: auto;
+      padding: 24px 20px;
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+    }
+    aside.sidebar h2 {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+      margin: 0 0 12px;
+    }
+    aside.sidebar nav ul {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 24px;
+    }
+    aside.sidebar nav li { margin: 2px 0; }
+    aside.sidebar nav a {
+      display: block;
+      padding: 6px 10px;
+      border-radius: var(--radius);
+      text-decoration: none;
+      color: var(--text);
+      font-size: 14px;
+    }
+    aside.sidebar nav a:hover { background: var(--surface-2); }
+
+    /* Main */
+    main { padding: 40px 48px 80px; min-width: 0; }
+    header.doc-header { margin-bottom: 32px; }
+    header.doc-header .eyebrow {
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    header.doc-header h1 {
+      font-size: 32px;
+      margin: 6px 0 10px;
+      line-height: 1.2;
+    }
+    header.doc-header p { color: var(--text-muted); margin: 0; max-width: 70ch; }
+
+    section { margin: 40px 0; scroll-margin-top: 24px; }
+    section > h2 {
+      font-size: 22px;
+      margin: 0 0 12px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--border);
+    }
+    section > h3 { font-size: 17px; margin: 24px 0 8px; }
+    section > p { margin: 10px 0; }
+    ul, ol { padding-left: 22px; }
+    li { margin: 4px 0; }
+
+    /* Code */
+    code, pre, kbd {
+      font-family: var(--mono);
+      font-size: 0.9em;
+    }
+    code {
+      background: var(--surface-2);
+      padding: 2px 5px;
+      border-radius: 4px;
+    }
+    pre {
+      background: var(--code-bg);
+      color: var(--code-text);
+      padding: 16px 18px;
+      border-radius: var(--radius);
+      overflow-x: auto;
+      line-height: 1.55;
+    }
+    pre code { background: none; padding: 0; color: inherit; }
+
+    /* Callouts */
+    .callout {
+      border-left: 4px solid var(--primary);
+      background: var(--primary-bg);
+      padding: 12px 16px;
+      border-radius: 0 var(--radius) var(--radius) 0;
+      margin: 16px 0;
+    }
+    .callout.note { border-color: var(--primary); background: var(--primary-bg); }
+    .callout.tip { border-color: var(--success); background: var(--success-bg); }
+    .callout.warning { border-color: var(--warning); background: var(--warning-bg); }
+    .callout.danger { border-color: var(--danger); background: var(--danger-bg); }
+    .callout p:first-child { margin-top: 0; }
+    .callout p:last-child { margin-bottom: 0; }
+    .callout-title { font-weight: 700; display: block; margin-bottom: 4px; }
+
+    /* Decision table (mimics the in-app editor) */
+    table.decision-table,
+    table.ref-table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 16px 0;
+      font-size: 14px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    table.decision-table th,
+    table.decision-table td,
+    table.ref-table th,
+    table.ref-table td {
+      border: 1px solid var(--border);
+      padding: 8px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    table.decision-table thead th { background: var(--surface); }
+    table.decision-table .input-col { background: var(--primary-bg); }
+    table.decision-table .output-col { background: var(--success-bg); }
+    table.decision-table thead th .col-type {
+      display: block;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+    table.decision-table .row-num {
+      background: var(--surface-2);
+      color: var(--text-muted);
+      text-align: center;
+      width: 36px;
+      font-variant-numeric: tabular-nums;
+    }
+    table.ref-table thead th { background: var(--surface); font-weight: 700; }
+
+    /* Badges */
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+    .badge-input { background: var(--primary-bg); color: var(--primary); }
+    .badge-output { background: var(--success-bg); color: var(--success); }
+    .badge-warn { background: var(--warning-bg); color: var(--warning); }
+    .badge-danger { background: var(--danger-bg); color: var(--danger); }
+
+    /* Steps */
+    .steps { counter-reset: step; list-style: none; padding-left: 0; }
+    .steps > li {
+      position: relative;
+      padding-left: 40px;
+      margin: 12px 0;
+    }
+    .steps > li::before {
+      counter-increment: step;
+      content: counter(step);
+      position: absolute;
+      left: 0; top: 0;
+      width: 26px; height: 26px;
+      background: var(--primary);
+      color: #fff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    /* Mobile nav toggle */
+    #nav-toggle { display: none; }
+
+    @media (max-width: 860px) {
+      .layout { grid-template-columns: 1fr; }
+      aside.sidebar {
+        position: static;
+        max-height: none;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+      .sidebar nav { display: none; }
+      #nav-toggle:checked ~ .sidebar nav { display: block; }
+      .nav-toggle-label {
+        display: inline-block;
+        cursor: pointer;
+        color: var(--primary);
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+      main { padding: 24px 20px 60px; }
+    }
+    @media (min-width: 861px) { .nav-toggle-label { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <input type="checkbox" id="nav-toggle" hidden />
+    <aside class="sidebar">
+      <h2>Contents</h2>
+      <label for="nav-toggle" class="nav-toggle-label">☰ Menu</label>
+      <nav>
+        <ul>
+          <li><a href="#overview">Overview</a></li>
+          <li><a href="#anatomy">Anatomy of a Decision Table</a></li>
+          <li><a href="#hit-policies">Hit Policies</a></li>
+          <li><a href="#input-columns">Input Columns</a></li>
+          <li><a href="#output-columns">Output Columns</a></li>
+          <li><a href="#actions">Actions &amp; Output Syntax</a></li>
+          <li><a href="#conditions">Conditions</a></li>
+          <li><a href="#triggers">Triggers</a></li>
+          <li><a href="#evaluation">Evaluation Order</a></li>
+          <li><a href="#examples">Worked Examples</a></li>
+          <li><a href="#how-to">How to Build a Table</a></li>
+          <li><a href="#best-practices">Best Practices</a></li>
+          <li><a href="#faq">FAQ</a></li>
+        </ul>
+      </nav>
+    </aside>
+
+    <main>
+      <header class="doc-header">
+        <div class="eyebrow">BPMN, Workflow Automation &amp; Portfolio Manager</div>
+        <h1>DMN Decision Tables — User Guide</h1>
+        <p>
+          Decision tables bring predictable, table-driven automation to your Jira issues. Instead of
+          chaining dozens of <em>if/then</em> rules, you describe outcomes in a grid and let the app
+          pick the right action for each situation. This guide explains how decision tables work in
+          this app and how to build one that does exactly what you need.
+        </p>
+      </header>
+
+      <!-- OVERVIEW -->
+      <section id="overview">
+        <h2>Overview</h2>
+        <p>
+          A decision table is a compact grid that maps combinations of issue attributes (the
+          <strong>inputs</strong>) to the actions the app should take (the <strong>outputs</strong>).
+          It is inspired by the <abbr title="Decision Model and Notation">DMN</abbr> standard, but
+          has been tailored to work natively with Jira issues and the app's automation engine.
+        </p>
+        <p>Each automation rule can contain:</p>
+        <ul>
+          <li>One <strong>trigger</strong> — the event that starts the rule (e.g. <em>Issue Created</em>).</li>
+          <li>One or more <strong>conditions</strong> — combined with logical <em>AND</em>.</li>
+          <li>One <strong>decision table</strong> — the grid described in this guide.</li>
+          <li>One or more <strong>standard actions</strong> — executed regardless of the table.</li>
+        </ul>
+        <p>
+          When a trigger fires, the engine checks the conditions and, if they pass, evaluates the
+          decision table. Any outputs the matched rows produce are then executed against the Jira
+          issue.
+        </p>
+        <div class="callout note">
+          <span class="callout-title">Where do I find this?</span>
+          <p>
+            Decision tables live inside each automation rule, in the <strong>📊 Decision Table (DMN)</strong>
+            section of the rule card. Open <em>BPMN, Workflow Automation &amp; Portfolio Manager</em> from
+            the Jira app launcher, open a diagram's automation rules, and expand a rule to see the table.
+          </p>
+        </div>
+      </section>
+
+      <!-- ANATOMY -->
+      <section id="anatomy">
+        <h2>Anatomy of a Decision Table</h2>
+        <p>A decision table has three parts:</p>
+        <ol>
+          <li><strong>Input columns</strong> — issue fields that the engine inspects (e.g. Priority, Issue Type).</li>
+          <li><strong>Output columns</strong> — the actions to take when a row matches.</li>
+          <li><strong>Rows</strong> — each row is one rule. A row "matches" when all of its non-empty input cells match the current issue.</li>
+        </ol>
+        <p>Here is a complete example:</p>
+
+        <table class="decision-table">
+          <caption style="text-align:left; padding:8px 0; color:var(--text-muted); font-size:13px;">
+            Hit policy: <strong>First (F)</strong> — the first matching row wins.
+          </caption>
+          <thead>
+            <tr>
+              <th class="row-num">#</th>
+              <th class="input-col">Priority<span class="col-type">Input</span></th>
+              <th class="input-col">Issue Type<span class="col-type">Input</span></th>
+              <th class="output-col">Action<span class="col-type">Output</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="row-num">1</td>
+              <td>High</td>
+              <td>Bug</td>
+              <td><code>transition: In Progress</code></td>
+            </tr>
+            <tr>
+              <td class="row-num">2</td>
+              <td>High</td>
+              <td><em>(any)</em></td>
+              <td><code>assign: 5f4b...</code></td>
+            </tr>
+            <tr>
+              <td class="row-num">3</td>
+              <td><em>(any)</em></td>
+              <td><em>(any)</em></td>
+              <td><code>add_comment: Triaged by automation</code></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="callout note">
+          <span class="callout-title">Empty cells are wildcards</span>
+          <p>
+            If an input cell is left blank, the engine treats that cell as matching <strong>any</strong>
+            value. This lets you write catch-all rows without listing every combination.
+          </p>
+        </div>
+      </section>
+
+      <!-- HIT POLICIES -->
+      <section id="hit-policies">
+        <h2>Hit Policies</h2>
+        <p>
+          The <strong>hit policy</strong> tells the engine how to behave when more than one row
+          matches. Choose it from the dropdown directly above the table.
+        </p>
+        <table class="ref-table">
+          <thead>
+            <tr>
+              <th>Policy</th>
+              <th>Code</th>
+              <th>Behaviour when multiple rows match</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Unique</strong></td>
+              <td>U</td>
+              <td>Exactly one row must match. If two or more rows match, <strong>no outputs are produced</strong> (the table is considered ambiguous).</td>
+            </tr>
+            <tr>
+              <td><strong>First</strong> <span class="badge badge-input">default</span></td>
+              <td>F</td>
+              <td>The <strong>first</strong> matching row (in table order, top to bottom) wins. Evaluation stops after the first match.</td>
+            </tr>
+            <tr>
+              <td><strong>Collect</strong></td>
+              <td>C</td>
+              <td><strong>All</strong> matching rows contribute their outputs. Every match is executed.</td>
+            </tr>
+            <tr>
+              <td><strong>Any</strong></td>
+              <td>A</td>
+              <td>All matching rows must <strong>agree</strong> on every output value. If they disagree, no outputs are produced.</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="callout tip">
+          <span class="callout-title">When to choose which</span>
+          <ul>
+            <li><strong>First</strong> — for prioritised escalation rules ("the most specific rule that applies").</li>
+            <li><strong>Collect</strong> — when you want to apply several independent actions, e.g. add a label <em>and</em> post a comment.</li>
+            <li><strong>Unique</strong> — to enforce that your table is unambiguous; great as a safety check.</li>
+            <li><strong>Any</strong> — for consensus rules where conflicting matches should silently do nothing.</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- INPUT COLUMNS -->
+      <section id="input-columns">
+        <h2>Input Columns</h2>
+        <p>
+          An input column inspects a single Jira field. The column's <strong>label</strong> determines
+          which field is read — the label is matched (case-insensitive, spaces removed) against the
+          supported field names below.
+        </p>
+        <table class="ref-table">
+          <thead>
+            <tr>
+              <th>Label (use any case)</th>
+              <th>Jira field read</th>
+              <th>How the value is compared</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code>status</code></td><td>Issue status name</td><td>Equals, compared case-insensitively</td></tr>
+            <tr><td><code>priority</code></td><td>Priority name</td><td>Equals, case-insensitive</td></tr>
+            <tr><td><code>issuetype</code></td><td>Issue type name</td><td>Equals, case-insensitive</td></tr>
+            <tr><td><code>assignee</code></td><td>Assignee display name</td><td>Equals, case-insensitive</td></tr>
+            <tr><td><code>labels</code></td><td>Comma-joined label list</td><td>Equals the whole string, case-insensitive</td></tr>
+            <tr><td><code>components</code></td><td>Comma-joined component names</td><td>Equals the whole string, case-insensitive</td></tr>
+          </tbody>
+        </table>
+        <div class="callout warning">
+          <span class="callout-title">Comparison is "equals"</span>
+          <p>
+            Inside a decision table, every non-empty input cell is compared using <strong>equals</strong>
+            (case-insensitive). The richer condition operators (contains, greater than, etc.) are
+            available in the separate <em>If (Conditions)</em> block of the rule, not inside the table
+            cells themselves.
+          </p>
+        </div>
+        <p>
+          Use the <strong>+ Add Input</strong> button to add a column. You can rename a column by
+          editing the header text directly, and remove it with the <span aria-hidden="true">✕</span>
+          button next to the label. Removing a column also strips its cells from every row.
+        </p>
+      </section>
+
+      <!-- OUTPUT COLUMNS -->
+      <section id="output-columns">
+        <h2>Output Columns</h2>
+        <p>
+          An output column holds the action the app will perform when a row matches. To be treated as
+          an actionable output, the column's <strong>label must contain the word "action"</strong>
+          (case-insensitive) — for example <code>Action</code>, <code>Routing Action</code>, or
+          <code>Escalation Action</code>. Output columns whose labels do not contain "action" are
+          ignored by the engine.
+        </p>
+        <p>The value of an output cell uses a keyword prefix to select the action type:</p>
+        <table class="ref-table">
+          <thead>
+            <tr>
+              <th>Output cell value</th>
+              <th>Action performed</th>
+              <th>Example</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>transition: &lt;status&gt;</code></td>
+              <td>Transitions the issue to the named status (matched case-insensitively against the workflow's transition names).</td>
+              <td><code>transition: In Progress</code></td>
+            </tr>
+            <tr>
+              <td><code>assign: &lt;accountId&gt;</code></td>
+              <td>Assigns the issue to the given Atlassian account ID.</td>
+              <td><code>assign: 5f4b9a2c8e1f0100</code></td>
+            </tr>
+            <tr>
+              <td>Any other value</td>
+              <td>Added as a comment on the issue.</td>
+              <td><code>Auto-triaged as P1.</code></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="callout warning">
+          <span class="callout-title">Output cells are free text — be exact</span>
+          <p>
+            The prefix (<code>transition:</code> / <code>assign:</code>) must be spelt exactly, in
+            lowercase, followed by the value. Anything else is posted verbatim as a comment. If a
+            transition or assignee value doesn't resolve in Jira, that single action is skipped — the
+            rest of the rule still runs.
+          </p>
+        </div>
+      </section>
+
+      <!-- ACTIONS -->
+      <section id="actions">
+        <h2>Actions &amp; Output Syntax</h2>
+        <p>
+          Decision table outputs support three keyword actions (<code>transition:</code>,
+          <code>assign:</code>, and free-text comments). For richer actions — setting fields, adding or
+          removing labels, creating linked issues, or calling webhooks — use the rule's separate
+          <strong>✅ Then (Actions)</strong> block. Those standard actions run <em>in addition</em> to
+          the decision table outputs whenever the rule fires.
+        </p>
+        <table class="ref-table">
+          <thead>
+            <tr>
+              <th>Standard action type</th>
+              <th>Value format</th>
+              <th>What it does</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Set Field Value</td><td><code>&lt;field&gt;:&lt;value&gt;</code></td><td>Sets a single issue field.</td></tr>
+            <tr><td>Transition Issue</td><td><code>&lt;status name&gt;</code></td><td>Transitions to the named status.</td></tr>
+            <tr><td>Add Comment</td><td><code>&lt;text&gt;</code></td><td>Adds a comment.</td></tr>
+            <tr><td>Assign To</td><td><code>&lt;accountId&gt;</code></td><td>Assigns the issue.</td></tr>
+            <tr><td>Add Label</td><td><code>&lt;label&gt;</code></td><td>Adds a label.</td></tr>
+            <tr><td>Remove Label</td><td><code>&lt;label&gt;</code></td><td>Removes a label.</td></tr>
+            <tr><td>Create Linked Issue</td><td><code>&lt;proj&gt;|&lt;type&gt;|&lt;summary&gt;</code></td><td>Creates a new issue.</td></tr>
+            <tr><td>Call Webhook</td><td><code>&lt;URL&gt;</code></td><td>POSTs the issue JSON to the URL.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- CONDITIONS -->
+      <section id="conditions">
+        <h2>Conditions</h2>
+        <p>
+          The rule-level <strong>If (Conditions)</strong> block is evaluated <em>before</em> the
+          decision table. All conditions must be true (logical <strong>AND</strong>) for the table to
+          be evaluated at all. Conditions support the following operators:
+        </p>
+        <table class="ref-table">
+          <thead>
+            <tr><th>Operator</th><th>Meaning</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>equals</code></td><td>Exact, case-insensitive match.</td></tr>
+            <tr><td><code>not_equals</code></td><td>Anything other than an exact match.</td></tr>
+            <tr><td><code>contains</code></td><td>The field value includes the given substring.</td></tr>
+            <tr><td><code>not_contains</code></td><td>The field value does not include the substring.</td></tr>
+            <tr><td><code>is_empty</code></td><td>The field has no value.</td></tr>
+            <tr><td><code>is_not_empty</code></td><td>The field has any value.</td></tr>
+            <tr><td><code>greater_than</code></td><td>Numeric greater-than.</td></tr>
+            <tr><td><code>less_than</code></td><td>Numeric less-than.</td></tr>
+          </tbody>
+        </table>
+        <div class="callout note">
+          <span class="callout-title">Conditions vs. decision table inputs</span>
+          <p>
+            Conditions are good for broad gates ("only when status = Open"). Decision table inputs are
+            good for branching outcomes across many combinations. You can use both together: a few
+            conditions to gate the rule, then a decision table to pick the precise action.
+          </p>
+        </div>
+      </section>
+
+      <!-- TRIGGERS -->
+      <section id="triggers">
+        <h2>Triggers</h2>
+        <p>
+          A rule begins with a single trigger — the event in Jira that causes the engine to evaluate
+          it. The trigger also restricts which decision-table evaluations make sense.
+        </p>
+        <table class="ref-table">
+          <thead>
+            <tr><th>Trigger</th><th>Fires when…</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Issue Created</td><td>A new issue is created.</td></tr>
+            <tr><td>Issue Updated</td><td>An issue is updated (any field).</td></tr>
+            <tr><td>Issue Transitioned</td><td>The issue's <em>status</em> changes. You can restrict this to a target status using the "To status" field.</td></tr>
+            <tr><td>Priority Changed</td><td>The <em>priority</em> field changes.</td></tr>
+            <tr><td>Issue Assigned</td><td>The <em>assignee</em> field changes.</td></tr>
+            <tr><td>Comment Added</td><td>A comment is added.</td></tr>
+          </tbody>
+        </table>
+        <div class="callout warning">
+          <span class="callout-title">Self-generated events are ignored</span>
+          <p>
+            To prevent infinite loops, the engine skips any event caused by the app itself. You don't
+            need to add your own loop guard — but keep it in mind if a rule seems to "do nothing": the
+            triggering change may have been made by this app.
+          </p>
+        </div>
+      </section>
+
+      <!-- EVALUATION ORDER -->
+      <section id="evaluation">
+        <h2>Evaluation Order</h2>
+        <p>For each project diagram, when a trigger event arrives the engine does the following:</p>
+        <ol class="steps">
+          <li>Re-fetches the full issue from Jira (the webhook payload is minimal).</li>
+          <li>Derives the specific trigger type from the event and changelog.</li>
+          <li>For each <strong>active</strong> rule on the diagram whose trigger matches the event type:</li>
+          <li>Validates any trigger-specific config (e.g. the target status for transitions).</li>
+          <li>Evaluates the rule's conditions (logical AND). Skips the rule if any fail.</li>
+          <li>Evaluates the decision table per the chosen <a href="#hit-policies">hit policy</a>.</li>
+          <li>Executes the rule's standard actions, then the decision-table outputs, against the issue.</li>
+        </ol>
+        <div class="callout note">
+          <span class="callout-title">Each action is independent</span>
+          <p>
+            If one action fails (for example, an invalid transition name), it is logged and skipped;
+            the remaining actions still run. This means a single bad cell value won't silently kill
+            your whole rule.
+          </p>
+        </div>
+      </section>
+
+      <!-- EXAMPLES -->
+      <section id="examples">
+        <h2>Worked Examples</h2>
+
+        <h3>1. Priority-based triage (First hit policy)</h3>
+        <p>When a bug is created, escalate it immediately; otherwise add a generic comment.</p>
+        <table class="decision-table">
+          <caption style="text-align:left; padding:8px 0; color:var(--text-muted); font-size:13px;">
+            Trigger: <strong>Issue Created</strong> · Hit policy: <strong>First (F)</strong>
+          </caption>
+          <thead>
+            <tr>
+              <th class="row-num">#</th>
+              <th class="input-col">Priority<span class="col-type">Input</span></th>
+              <th class="input-col">Issue Type<span class="col-type">Input</span></th>
+              <th class="output-col">Action<span class="col-type">Output</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="row-num">1</td><td>High</td><td>Bug</td><td><code>transition: In Progress</code></td></tr>
+            <tr><td class="row-num">2</td><td></td><td></td><td><code>Auto-triaged. A teammate will review shortly.</code></td></tr>
+          </tbody>
+        </table>
+
+        <h3>2. Multi-label routing (Collect hit policy)</h3>
+        <p>Apply several labels based on issue type, regardless of priority.</p>
+        <table class="decision-table">
+          <caption style="text-align:left; padding:8px 0; color:var(--text-muted); font-size:13px;">
+            Trigger: <strong>Issue Created</strong> · Hit policy: <strong>Collect (C)</strong>
+          </caption>
+          <thead>
+            <tr>
+              <th class="row-num">#</th>
+              <th class="input-col">Issue Type<span class="col-type">Input</span></th>
+              <th class="output-col">Action<span class="col-type">Output</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="row-num">1</td><td>Bug</td><td><code>add_label: needs-triage</code></td></tr>
+            <tr><td class="row-num">2</td><td>Task</td><td><code>add_label: backlog</code></td></tr>
+            <tr><td class="row-num">3</td><td>Epic</td><td><code>add_label: planning</code></td></tr>
+          </tbody>
+        </table>
+        <div class="callout note">
+          <span class="callout-title">Mixing decision outputs and standard actions</span>
+          <p>
+            <code>add_label:</code> is not a decision-table keyword, so in row cells it would be posted
+            as a comment. To actually add labels here, either move <code>add_label</code> into the
+            rule's <strong>✅ Then (Actions)</strong> block (one per label) or keep the table for
+            routing and add labels as standard actions.
+          </p>
+        </div>
+
+        <h3>3. Assignment routing (Unique hit policy)</h3>
+        <p>Assign issues to a dedicated owner per component. If two components match, do nothing.</p>
+        <table class="decision-table">
+          <caption style="text-align:left; padding:8px 0; color:var(--text-muted); font-size:13px;">
+            Trigger: <strong>Issue Created</strong> · Hit policy: <strong>Unique (U)</strong>
+          </caption>
+          <thead>
+            <tr>
+              <th class="row-num">#</th>
+              <th class="input-col">Components<span class="col-type">Input</span></th>
+              <th class="output-col">Action<span class="col-type">Output</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="row-num">1</td><td>Frontend</td><td><code>assign: 5f4b9a2c8e1f0100</code></td></tr>
+            <tr><td class="row-num">2</td><td>Backend</td><td><code>assign: 6a7c1b3d902f0200</code></td></tr>
+            <tr><td class="row-num">3</td><td>Infra</td><td><code>assign: 7b8d2c4e013f0300</code></td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- HOW TO -->
+      <section id="how-to">
+        <h2>How to Build a Decision Table</h2>
+        <ol class="steps">
+          <li>Open the diagram whose rules you want to automate and expand the <strong>Automation Rules</strong> panel.</li>
+          <li>Click <strong>+ New Rule</strong> and give it a name.</li>
+          <li>Under <strong>⚡ When (Trigger)</strong>, choose the event that should start the rule.</li>
+          <li>(Optional) Add gate conditions under <strong>🔍 If (Conditions)</strong>.</li>
+          <li>In the <strong>📊 Decision Table (DMN)</strong> section, pick a <a href="#hit-policies">hit policy</a>.</li>
+          <li>Use <strong>+ Add Input</strong> and <strong>+ Add Output</strong> to define columns. Rename headers so inputs match a supported field name and outputs contain the word "action".</li>
+          <li>Use <strong>+ Add Row</strong> to add rules. Fill in input cells (leave blank for "any") and output cells using the <a href="#output-columns">output syntax</a>.</li>
+          <li>(Optional) Add standard actions under <strong>✅ Then (Actions)</strong>.</li>
+          <li>Click <strong>Save Rules</strong>. Your changes persist to the app storage and begin firing immediately.</li>
+        </ol>
+        <div class="callout tip">
+          <span class="callout-title">Drafts are auto-saved</span>
+          <p>
+            While editing, your unsaved changes are kept as a local draft so switching tabs or reloading
+            won't lose work. A banner reminds you to press <strong>Save Rules</strong> to persist them
+            to the server.
+          </p>
+        </div>
+      </section>
+
+      <!-- BEST PRACTICES -->
+      <section id="best-practices">
+        <h2>Best Practices</h2>
+        <ul>
+          <li><strong>Order rows from most specific to least specific</strong> when using the <em>First</em> hit policy, since the first match wins.</li>
+          <li><strong>Keep a catch-all row</strong> at the bottom (all input cells blank) so unexpected combinations still get a sensible default action.</li>
+          <li><strong>Name output columns with "action"</strong> — columns without that word in the label are ignored by the engine.</li>
+          <li><strong>Prefer Collect</strong> when you want multiple independent actions; <strong>Unique</strong> when ambiguity should be a no-op.</li>
+          <li><strong>Test with a real issue</strong> after saving — create or update an issue that should match and watch the resulting comment/transition.</li>
+          <li><strong>Disable rules while editing</strong> if you don't want them firing mid-edit; re-enable after saving.</li>
+        </ul>
+      </section>
+
+      <!-- FAQ -->
+      <section id="faq">
+        <h2>FAQ</h2>
+
+        <h3>My table didn't fire. Why?</h3>
+        <p>Common causes:</p>
+        <ul>
+          <li>The rule is <strong>disabled</strong> (toggle the <em>Enable</em> button).</li>
+          <li>The <strong>trigger type</strong> doesn't match the event that occurred.</li>
+          <li>A rule-level <strong>condition</strong> failed, so the table was never evaluated.</li>
+          <li>For <em>Issue Transitioned</em>, the target <strong>To status</strong> didn't match the issue's new status.</li>
+          <li>A <em>Unique</em> or <em>Any</em> policy produced no output because rows conflicted.</li>
+        </ul>
+
+        <h3>Why did my output become a comment instead of an action?</h3>
+        <p>
+          The output cell value must start with exactly <code>transition:</code> or
+          <code>assign:</code> (lowercase, with the colon). Anything else — including a typo like
+          <code>Transition:</code> or <code>transition</code> with no colon — is posted verbatim as a
+          comment.
+        </p>
+
+        <h3>Can a decision table use "contains" or "greater than"?</h3>
+        <p>
+          Not inside the table cells — table inputs always use case-insensitive <em>equals</em>. For
+          those operators, add a rule-level condition in the <strong>If (Conditions)</strong> block.
+        </p>
+
+        <h3>Does the app look at custom fields?</h3>
+        <p>
+          Custom fields are supported in the <strong>Conditions</strong> block (choose
+          <em>Custom Field</em> and enter the field id). They are not directly addressable as decision
+          table input columns.
+        </p>
+      </section>
+
+      <footer style="margin-top:48px; padding-top:16px; border-top:1px solid var(--border); color:var(--text-muted); font-size:13px;">
+        <p>
+          Documentation for the <strong>BPMN, Workflow Automation &amp; Portfolio Manager</strong>
+          Atlassian Marketplace app. Decision-table behaviour reflects the automation engine shipped
+          with the app.
+        </p>
+      </footer>
+    </main>
+  </div>
+</body>
+</html>
