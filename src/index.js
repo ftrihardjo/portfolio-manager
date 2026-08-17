@@ -655,53 +655,5 @@ resolver.define('revertBpmnDiagram', async ({ payload, context }) => {
   return record;
 });
 
-// ─── Version diff ("Compare" in the commit ledger) ──────────────────
-// Read-only structural diff between two stored commits: loads the two
-// version blobs and compares element ids/names. Never writes anything.
-resolver.define('diffBpmnVersions', async ({ payload }) => {
-  const { diagramId, baseVersion, targetVersion } = payload;
-  const parseEls = (xml) => {
-    const els = [];
-    const re = /<bpmn:[A-Za-z]+\b[^>]*>/g;   // whole opening tag, then inspect attrs
-    let m;
-    while ((m = re.exec(xml || ''))) {
-      const tag = m[0];
-      const idM = tag.match(/\bid="([^"]+)"/);
-      if (!idM) continue;                    // skips <bpmn:definitions> etc.
-      const nameM = tag.match(/\bname="([^"]*)"/);
-      els.push({
-        type: tag.slice(1, tag.search(/[\s>]/)).replace('bpmn:', ''),
-        id: idM[1],
-        name: nameM ? nameM[1] : '',
-      });
-    }
-    return els;
-  };
-  const load = async (v) => {
-    const blob = await kvs.get(bpmnVersionKey(diagramId, v));
-    if (blob) return blob;
-    const d = await kvs.get(bpmnDiagramKey(diagramId));
-    if (d && d.version === v) return { xml: d.xml, name: d.latestVersionName || `v${v}` };
-    throw new Error(`Version ${v} not found for diagram ${diagramId}`);
-  };
-  const [a, b] = await Promise.all([load(baseVersion), load(targetVersion)]);
-  const ea = parseEls(a.xml);
-  const eb = parseEls(b.xml);
-  const mapA = new Map(ea.map((e) => [e.id, e]));
-  const mapB = new Map(eb.map((e) => [e.id, e]));
-  const added    = eb.filter((e) => !mapA.has(e.id));
-  const removed  = ea.filter((e) => !mapB.has(e.id));
-  const modified = eb.filter((e) => {
-    const old = mapA.get(e.id);
-    return old && (old.name !== e.name || old.type !== e.type);
-  });
-  return {
-    base:   { version: baseVersion,   name: a.name || `v${baseVersion}` },
-    target: { version: targetVersion, name: b.name || `v${targetVersion}` },
-    added, removed, modified,
-    unchangedCount: eb.length - added.length - modified.length,
-  };
-});
-
 export const handler = resolver.getDefinitions();
 export { automationEngine };

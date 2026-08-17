@@ -64,7 +64,7 @@ function buildCommits(rec) {
     .sort((a, b) => b.version - a.version);
 }
 
-export default function BpmnCommitHistory({ record, canEdit, onPickVersion, onRevert, onBack, compareBase, onCompare }) {
+export default function BpmnCommitHistory({ record, canEdit, onPickVersion, onRevert, onBack }) {
   const [query, setQuery] = useState('');
   const [authorFilter, setAuthorFilter] = useState('');
   const [revertsOnly, setRevertsOnly] = useState(false);
@@ -193,14 +193,6 @@ export default function BpmnCommitHistory({ record, canEdit, onPickVersion, onRe
                   <div className="cl-actions">
                     <button className="cl-act" onClick={(e) => { e.stopPropagation(); openEditor(); }} data-testid={`open-commit-${c.version}`}>
                       Open in editor
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); if (onCompare) onCompare(c.version); }}
-                      data-testid={`compare-commit-${c.version}`}
-                      title={compareBase && compareBase !== c.version ? `Diff v${compareBase} → v${c.version}` : 'Pin as comparison baseline'}
-                      style={{ fontSize: 11, marginLeft: 6 }}
-                    >
-                      {compareBase === c.version ? 'Baseline ✓' : 'Compare'}
                     </button>
                     {canEdit && !isHead && confirmRevert !== c.version && (
                       <button

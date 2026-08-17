@@ -475,22 +475,6 @@ export default function App() {
   const [realtimeEvent, setRealtimeEvent] = useState(null);
   const REALTIME_CHANNEL = 'bpmn-diagram-events';
   const [historyRecord, setHistoryRecord] = useState(null);
-  const [compareBase, setCompareBase] = useState(null);
-  const [versionDiff, setVersionDiff] = useState(null);
-
-    const handleCompare = async (version) => {
-      if (!historyRecord) return;
-      if (compareBase === version) { setCompareBase(null); setVersionDiff(null); return; }
-      if (compareBase == null)     { setCompareBase(version); setVersionDiff(null); return; }
-      try {
-        const d = await invoke('diffBpmnVersions', {
-          diagramId: historyRecord.id,
-          baseVersion: compareBase,
-          targetVersion: version,
-        });
-        setVersionDiff(d);
-      } catch (e) { setError(e.message); }
-    };
 
   const openCommitHistory = async (id) => {
     setError(null); // clear any stale banner (e.g. a previous diagram's
@@ -2344,27 +2328,12 @@ export default function App() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   {historyRecord ? (
                       <>
-                        {versionDiff && (
-                          <div data-testid="bpmn-diff-panel" style={{ marginBottom: 12, border: '1px solid #ddd', borderRadius: 8, padding: 12, fontSize: 12, background: '#fafbfc' }}>
-                            <strong>v{versionDiff.base.version} → v{versionDiff.target.version}:</strong>{' '}
-                            <span style={{ color: '#36B37E' }}>+{versionDiff.added.length} added</span>{' '}
-                            <span style={{ color: '#DE350B' }}>−{versionDiff.removed.length} removed</span>{' '}
-                            <span style={{ color: '#974f0c' }}>~{versionDiff.modified.length} changed</span>{' '}
-                            <span style={{ color: '#666' }}>{versionDiff.unchangedCount} unchanged</span>
-                            <button onClick={() => setVersionDiff(null)} style={{ float: 'right', fontSize: 11 }}>Dismiss</button>
-                            {versionDiff.added.length > 0 && <div>Added: {versionDiff.added.map(e => `${e.id}${e.name ? ` (${e.name})` : ''}`).join(', ')}</div>}
-                            {versionDiff.removed.length > 0 && <div>Removed: {versionDiff.removed.map(e => e.id).join(', ')}</div>}
-                            {versionDiff.modified.length > 0 && <div>Changed: {versionDiff.modified.map(e => e.id).join(', ')}</div>}
-                          </div>
-                        )}
                         <BpmnCommitHistory
                           record={historyRecord}
                           canEdit={canEditDiagram}
                           onPickVersion={openVersionInEditor}
                           onRevert={handleRevert}
-                          onBack={() => { setHistoryRecord(null); setSelectedDiagramId(null); setCompareBase(null); setVersionDiff(null); }}
-                          compareBase={compareBase}
-                          onCompare={handleCompare}
+                          onBack={() => { setHistoryRecord(null); setSelectedDiagramId(null); }}
                         />
                       </>
                     ) : (
