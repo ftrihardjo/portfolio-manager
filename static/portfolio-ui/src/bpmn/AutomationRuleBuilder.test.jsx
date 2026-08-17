@@ -2,14 +2,11 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import AutomationRuleBuilder from './AutomationRuleBuilder';
-import { Events } from '../analytics';
 
 const invokeMock = vi.fn();
 vi.mock('@forge/bridge', () => ({ invoke: (...a) => invokeMock(...a) }));
 
 const store = {};
-const tracked = () =>
-  invokeMock.mock.calls.filter(([cmd]) => cmd === 'trackPlgEvent').map(([, p]) => p.name);
 
 beforeEach(() => {
   invokeMock.mockReset();
@@ -28,20 +25,16 @@ beforeEach(() => {
 
 const props = { diagramId: 'd1', projectKey: 'OPS', canEdit: true };
 
-describe('AutomationRuleBuilder PLG + persistence', () => {
-  it('fires rule_created events only after a successful save', async () => {
+describe('AutomationRuleBuilder persistence', () => {
+  it('saves a new rule to the backend', async () => {
     render(<AutomationRuleBuilder {...props} />);
     fireEvent.click(await screen.findByTestId('add-rule'));
     fireEvent.click(screen.getByTestId('save-rules'));
 
     await waitFor(() => expect(store.d1).toHaveLength(1));
-    await waitFor(() => {
-      expect(tracked()).toContain(Events.AUTOMATION_RULE_CREATED);
-      expect(tracked()).toContain(Events.FIRST_RULE_CREATED);
-    });
   });
 
-  it('fires no PLG events when the save fails', async () => {
+  it('surfaces an error and leaves the store untouched when save fails', async () => {
     invokeMock.mockImplementation(async (cmd) => {
       if (cmd === 'saveAutomationRules') throw new Error('boom');
       if (cmd === 'getAutomationRules') return [];
@@ -52,7 +45,7 @@ describe('AutomationRuleBuilder PLG + persistence', () => {
     fireEvent.click(screen.getByTestId('save-rules'));
 
     await waitFor(() => expect(screen.getByText(/boom/)).toBeTruthy());
-    expect(tracked()).not.toContain(Events.AUTOMATION_RULE_CREATED);
+    expect(store.d1).toBeUndefined();
   });
 
   it('keeps saved rules across unmount/remount (tab switch)', async () => {
@@ -128,32 +121,5 @@ describe('AutomationRuleBuilder PLG + persistence', () => {
     render(<AutomationRuleBuilder {...props} />);
     await screen.findAllByText('Untitled Rule');
     expect(screen.queryByTestId('draft-restored')).toBeNull();
-  });
-
-  it('fires activation_first_rule_created only when backend reports first rule', async () => {
-    invokeMock.mockImplementation(async (cmd, payload = {}) => {
-      if (cmd === 'getAutomationRules') return [];
-      if (cmd === 'saveAutomationRules')
-        return { saved: true, count: payload.rules.length, firstRuleForUser: true };
-      return { ok: true };
-    });
-    render(<AutomationRuleBuilder {...props} />);
-    fireEvent.click(await screen.findByTestId('add-rule'));
-    fireEvent.click(screen.getByTestId('save-rules'));
-    await waitFor(() => expect(tracked()).toContain(Events.FIRST_RULE_CREATED));
-  });
-
-  it('does not fire activation event on subsequent saves', async () => {
-    invokeMock.mockImplementation(async (cmd, payload = {}) => {
-      if (cmd === 'getAutomationRules') return [];
-      if (cmd === 'saveAutomationRules')
-        return { saved: true, count: payload.rules.length, firstRuleForUser: false };
-      return { ok: true };
-    });
-    render(<AutomationRuleBuilder {...props} />);
-    fireEvent.click(await screen.findByTestId('add-rule'));
-    fireEvent.click(screen.getByTestId('save-rules'));
-    await waitFor(() => expect(tracked()).toContain(Events.AUTOMATION_RULE_CREATED));
-    expect(tracked()).not.toContain(Events.FIRST_RULE_CREATED);
   });
 });

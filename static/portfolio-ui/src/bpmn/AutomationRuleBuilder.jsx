@@ -1,6 +1,5 @@
 import React, { useState, useCallback } from 'react';
 import { invoke } from '@forge/bridge';
-import { PLG, Events } from '../analytics';
 
 const draftKey = (id) => `automation:draft:${id}`;
 
@@ -531,7 +530,7 @@ export default function AutomationRuleBuilder({ diagramId, projectKey, canEdit }
     setSaving(true);
     setError(null);
     try {
-      const result = await invoke('saveAutomationRules', { diagramId, projectKey, rules });
+      await invoke('saveAutomationRules', { diagramId, projectKey, rules });
 
       // Persisted → drop the draft
       setDirty(false);
@@ -539,25 +538,8 @@ export default function AutomationRuleBuilder({ diagramId, projectKey, canEdit }
       try { localStorage.removeItem(draftKey(diagramId)); } catch {}
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
-
-      // ── PLG: fire ONLY after confirmed persistence ──────────────
-      const usesDmn = rules.some((r) => (r.decisionTable?.rows?.length || 0) > 0);
-      PLG.track(Events.AUTOMATION_RULE_CREATED, {
-        rule_count: rules.length,
-        enabled_count: rules.filter((r) => r.enabled).length,
-        uses_dmn: usesDmn,
-        project_key: projectKey,
-      });
-      if (usesDmn) {
-        PLG.track(Events.DECISION_TABLE_USED, {
-          rows: rules.reduce((n, r) => n + (r.decisionTable?.rows?.length || 0), 0),
-        });
-      }
-      if (result.firstRuleForUser) {
-        PLG.track(Events.FIRST_RULE_CREATED, { project_key: projectKey });
-      }
     } catch (e) {
-      setError(e.message || 'Failed to save rules'); // no PLG events on failure
+      setError(e.message || 'Failed to save rules');
     } finally {
       setSaving(false);
     }

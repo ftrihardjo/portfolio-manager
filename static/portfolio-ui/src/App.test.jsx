@@ -959,8 +959,7 @@ describe('App', () => {
       expect(screen.queryByTestId('save-bpmn')).not.toBeInTheDocument();
     });
 
-    it('fires engagement_diagram_reverted with the correct target version after a successful revert', async () => {
-      const tracked = [];
+    it('shows the new commit after a successful revert', async () => {
       let record = {
         id: 'diagram-1', name: 'Refund Flow', projectKey: 'PROJ1', xml: '<xml/>', version: 2,
         versions: [
@@ -982,7 +981,6 @@ describe('App', () => {
           };
           return record;
         },
-        trackPlgEvent: (payload) => { tracked.push(payload); return { ok: true }; },
       });
 
       render(<App />);
@@ -992,19 +990,16 @@ describe('App', () => {
       fireEvent.click(screen.getByText('Refund Flow'));
       await waitFor(() => expect(screen.getByTestId('bpmn-version-list')).toBeInTheDocument());
 
-      // Revert to v1 (not HEAD), confirm, and check the resulting event.
+      // Revert to v1 (not HEAD), confirm, and check the new commit landed.
       fireEvent.click(screen.getByTestId('revert-commit-1'));
       fireEvent.click(screen.getByText('Confirm revert'));
 
-      await waitFor(() => {
-        const reverted = tracked.find((t) => t.name === 'engagement_diagram_reverted');
-        expect(reverted).toBeTruthy();
-        expect(reverted.params.target_version).toBe(1);
+      await waitFor(async () => {
+        expect((await screen.findAllByText(/Reverted to v1/)).length).toBeGreaterThan(0);
       });
     });
 
-    it('sends the commit message field and fires engagement_commit_ledger_used only when one is entered', async () => {
-      const tracked = [];
+    it('sends the commit message field when one is entered', async () => {
       let savedDiagram = null;
       let lastSavePayload = null;
       mockInvoke({
@@ -1017,7 +1012,6 @@ describe('App', () => {
           savedDiagram = { id: 'diagram-1', name: payload.name, projectKey: payload.projectKey, updatedAt: '2026-01-01' };
           return { ...savedDiagram, xml: payload.xml, createdAt: '2026-01-01', version: 1, firstDiagramForUser: false };
         },
-        trackPlgEvent: (p) => { tracked.push(p); return { ok: true }; },
       });
 
       render(<App />);
@@ -1035,41 +1029,7 @@ describe('App', () => {
 
       await waitFor(() => {
         expect(lastSavePayload.message).toBe('remove abc');
-        expect(tracked.some((t) => t.name === 'engagement_commit_ledger_used')).toBe(true);
       });
-    });
-
-    it('does NOT fire engagement_commit_ledger_used when no commit message is entered', async () => {
-      const tracked = [];
-      let savedDiagram = null;
-      mockInvoke({
-        getProjects: projectsMock,
-        getCurrentUser: { accountId: 'acc-lead' },
-        getBpmnDiagrams: () => (savedDiagram ? [savedDiagram] : []),
-        canEditProject: ({ projectKey }) => ({ canEdit: projectKey === 'PROJ1' }),
-        saveBpmnDiagram: (payload) => {
-          savedDiagram = { id: 'diagram-1', name: payload.name, projectKey: payload.projectKey, updatedAt: '2026-01-01' };
-          return { ...savedDiagram, xml: payload.xml, createdAt: '2026-01-01', version: 1, firstDiagramForUser: false };
-        },
-        trackPlgEvent: (p) => { tracked.push(p); return { ok: true }; },
-      });
-
-      render(<App />);
-      await waitFor(() => screen.getByText('Alpha'));
-      fireEvent.click(screen.getByRole('tab', { name: /BPMN/i }));
-      await waitFor(() => screen.getByTestId('new-bpmn-diagram'));
-
-      fireEvent.click(screen.getByTestId('new-bpmn-diagram'));
-      fireEvent.change(screen.getByTestId('new-diagram-name'), { target: { value: 'Order Process' } });
-      fireEvent.change(screen.getByTestId('new-diagram-project'), { target: { value: 'PROJ1' } });
-      await waitFor(() => screen.getByTestId('bpmn-version-name'));
-      fireEvent.change(screen.getByTestId('bpmn-version-name'), { target: { value: 'v1' } });
-      fireEvent.click(screen.getByTestId('save-bpmn'));
-
-      await waitFor(() => {
-        expect(tracked.some((t) => t.name === 'engagement_diagram_saved')).toBe(true);
-      });
-      expect(tracked.some((t) => t.name === 'engagement_commit_ledger_used')).toBe(false);
     });
 
     it('clears a stale "deleted by another user" banner after opening a different, unaffected diagram', async () => {
@@ -1083,7 +1043,6 @@ describe('App', () => {
         getBpmnDiagrams: () => Object.values(diagrams).map((d) => ({ id: d.id, name: d.name, projectKey: d.projectKey, updatedAt: '2026-01-02', version: d.version })),
         getBpmnDiagram: ({ diagramId }) => diagrams[diagramId],
         canEditProject: () => ({ canEdit: true }),
-        trackPlgEvent: () => ({ ok: true }),
       });
 
       render(<App />);

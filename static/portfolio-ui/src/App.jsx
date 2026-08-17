@@ -6,7 +6,6 @@ import BpmnDiagramView from './bpmn/BpmnDiagramView';
 import BpmnEditorModal from './bpmn/BpmnEditorModal';   // ★ NEW
 import BpmnVersionList from './bpmn/BpmnVersionList';   // ★ NEW
 import BpmnCommitHistory from './bpmn/BpmnCommitHistory';
-import { PLG, Events } from './analytics';
 import 'vis-network/styles/vis-network.css';
 import 'bpmn-js/dist/assets/diagram-js.css';
 import 'bpmn-js/dist/assets/bpmn-font/css/bpmn.css';
@@ -520,12 +519,6 @@ export default function App() {
       upsertDiagramMeta(rec);
       setBpmnDiagrams(await invoke('getBpmnDiagrams'));
       setSrAnnouncement(`Reverted to v${toVersion} as new commit v${rec.version}`);
-      // 🚀 PLG TRACKING — only after confirmed persistence, matching every
-      // other event in this file. `version` didn't exist in this function's
-      // scope (it's a same-named parameter of the unrelated handleCompare
-      // above), so this line threw a ReferenceError on every call and the
-      // event never actually made it to PLG.track.
-      PLG.track(Events.DIAGRAM_REVERTED, { target_version: toVersion, new_version: rec.version });
     } catch (e) {
       if (e.message && e.message.startsWith('Conflict:')) {
         setBpmnConflict({
@@ -600,11 +593,6 @@ export default function App() {
       setBpmnConflict(null);
     } catch (e) { setError('Failed to reload diagram: ' + e.message); }
   };
-
-  // ✅ Track tab switches automatically
-  useEffect(() => {
-    PLG.track(Events.TAB_VIEWED, { tab: activeTab });
-  }, [activeTab]);
 
   // Debounce search query
   useEffect(() => {
@@ -741,7 +729,6 @@ export default function App() {
       setBpmnDiagrams(diagrams || []);
       if (user?.accountId) {
         setCurrentUserAccountId(user.accountId);
-        PLG.identify(user);
       }
     } catch (e) {
       setError('BPMN load error: ' + e.message);
@@ -855,9 +842,6 @@ export default function App() {
         message: commitMessage.trim(),
       };
       const rec = await invoke('saveBpmnDiagram', payload);
-      if (rec.firstDiagramForUser) {
-        PLG.track(Events.FIRST_DIAGRAM_SAVED, { projectKey: rec.projectKey });
-      }
       setSelectedDiagramId(rec.id);
       upsertDiagramMeta(rec);
       setViewingVersion(rec.version);
@@ -875,19 +859,8 @@ export default function App() {
       if (rec.lastEditedBy) {
         await resolveDisplayNames([rec.lastEditedBy]);
       }
-      // 🚀 PLG TRACKING
-      if (rec.firstDiagramForUser) {
-        PLG.track(Events.FIRST_DIAGRAM_SAVED, { projectKey: rec.projectKey });
-      } else {
-        PLG.track(Events.DIAGRAM_SAVED, { version: rec.version });
-      }
-
-      if (payload.message && payload.message.trim()) {
-        PLG.track(Events.COMMIT_LEDGER_USED);
-      }
     } catch (e) {
       if (e.message && e.message.startsWith('Conflict:')) {
-        PLG.track(Events.SAVE_CONFLICT);
         setBpmnConflict({
           lastEditedBy: e.message.match(/saved by (.+?) at/)?.[1] || 'another user',
           updatedAt: e.message.match(/at (.+?)\./)?.[1] || new Date().toISOString(),
