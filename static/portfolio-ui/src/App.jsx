@@ -1050,6 +1050,13 @@ export default function App() {
   const searchFocusIds = useMemo(() => {
     const q = depSearchQuery.trim().toLowerCase();
     if (!q) return [];
+
+    // Exact key match wins: "PAY-1" must zoom to PAY-1 only, never to
+    // same-prefix siblings like PAY-11 / PAY-12.
+    const exact = graphIssues.filter((d) => d.id.toLowerCase() === q);
+    if (exact.length) return exact.map((d) => d.id);
+
+    // Fallback: substring match on key or title (e.g. "PAY", "login bug").
     return graphIssues
       .filter((d) => d.id.toLowerCase().includes(q) || (d.title && d.title.toLowerCase().includes(q)))
       .map((d) => d.id);

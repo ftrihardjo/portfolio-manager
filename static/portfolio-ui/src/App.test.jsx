@@ -464,6 +464,30 @@ describe('App', () => {
       expect(screen.getByRole('option', { name: 'Blocks' })).toBeInTheDocument();
     });
 
+    it('zooms to the exact key match, not to same-prefix issues', async () => {
+      const deps = [
+        { id: 'PAY-1',  title: 'Refund flow',   project: 'PROJ1', type: 'story', statusCategory: 'new', statusName: 'To Do', links: [] },
+        { id: 'PAY-11', title: 'Payout batch',  project: 'PROJ1', type: 'story', statusCategory: 'new', statusName: 'To Do', links: [] },
+        { id: 'PAY-12', title: 'Payroll export', project: 'PROJ1', type: 'story', statusCategory: 'new', statusName: 'To Do', links: [] },
+      ];
+      mockInvoke({ getProjects: projectsMock, getIssueDependencies: () => deps });
+
+      render(<App />);
+      await waitFor(() => screen.getByText('Alpha')); // Wait for projects to load
+      fireEvent.click(screen.getByRole('tab', { name: /Dependencies/i }));
+
+      // Wait for the issue key button to render (avoids text-node matching issues with the title)
+      await waitFor(() => screen.getByText('PAY-1'));
+
+      // Exact key match → single focus id → camera snaps to PAY-1 alone
+      fireEvent.change(screen.getByTestId('search-dependencies'), { target: { value: 'PAY-1' } });
+      await waitFor(() => expect(screen.getByText('Search match (1)')).toBeInTheDocument());
+
+      // A bare prefix still spotlights the whole PAY-* family
+      fireEvent.change(screen.getByTestId('search-dependencies'), { target: { value: 'PAY' } });
+      await waitFor(() => expect(screen.getByText('Search match (3)')).toBeInTheDocument());
+    });
+
     it('filters dependencies by selected link type', async () => {
       const depsWithMultipleTypes = [
         { id: 'T1', title: 'Task A', project: 'PROJ1', type: 'task', statusCategory: 'indeterminate', statusName: 'In Progress', assignee: 'Alice', priority: 'High', links: [{ type: 'Blocks', inward: 'PROJ2-1' }] },
