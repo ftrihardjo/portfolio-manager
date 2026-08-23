@@ -11,7 +11,7 @@ modules:
       resource: portfolio-ui
       resolver:
         function: resolver
-      title: BPMN, Workflow Automation & Portfolio Manager
+      title: BPMN, Workflow Automation & Portfolio Manager for Jira
       layout: basic
 
   # ─── Automation Engine Triggers (Forge Syntax) ──────────────────────
