@@ -25,17 +25,28 @@ modules:
       events:
         - avi:jira:updated:issue
 
+  webtrigger:
+    - key: github-webhook
+      function: github-webhook-handler
+      urlFormat: v2
+
   function:
     - key: resolver
       handler: index.handler
     - key: automation-engine
       handler: index.automationEngine
+    - key: github-webhook-handler
+      handler: index.handleGithubWebhook
 
 resources:
   - key: portfolio-ui
     path: static/portfolio-ui/build
 
 permissions:
+  external:
+    fetch:
+      backend:
+        - 'api.github.com'
   scopes:
     - read:jira-work
     - read:jira-user
