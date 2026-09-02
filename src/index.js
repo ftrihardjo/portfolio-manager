@@ -3,6 +3,7 @@ import api, { route } from '@forge/api';
 import { kvs } from '@forge/kvs';
 import { publish } from '@forge/realtime';
 import { automationEngine } from './automation-engine';
+import { pushFileToGithub, getInstallationIdForRepo, handleGithubWebhook } from './github';
 
 const resolver = new Resolver();
 
@@ -252,6 +253,17 @@ const bpmnDiagramKey = (id) => `bpmn:diagram:${id}`;
 const bpmnVersionKey = (id, v) => `bpmn:diagram:${id}:v${v}`;
 const REALTIME_CHANNEL = 'bpmn-diagram-events';
 
+// ─── GitOps — sync BPMN/DMN saves to a connected GitHub repo ─────────
+const githubConfigKey = (projectKey) => `github:config:${projectKey}`;
+
+// Fills {id} and {name} in a path template like "workflows/{id}.bpmn".
+// `name` is slugified so it's always a safe path segment.
+function renderGithubPath(template, { id, name }) {
+  const slug = (name || id).toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || id;
+  return (template || 'workflows/{id}.bpmn').replace('{id}', id).replace('{name}', slug);
+}
+
 async function canEditProject(projectKey, accountId) {
   if (!accountId) return false;
   const res = await api.asUser().requestJira(
@@ -294,6 +306,46 @@ resolver.define('canEditProject', async ({ payload, context }) => {
   const accountId = context?.accountId ?? null;
   if (!projectKey) return { canEdit: false };
   return { canEdit: await canEditProject(projectKey, accountId) };
+});
+
+// Lets a project connect itself to a repo the GitHub App is already
+// installed on. We never store a raw installation id from user input —
+// it's always resolved from the installation directory the webhook
+// maintains, so a stale/guessed value can't be pasted in here.
+resolver.define('getGithubConfig', async ({ payload }) => {
+  const { projectKey } = payload;
+  if (!projectKey) return null;
+  const config = await kvs.get(githubConfigKey(projectKey));
+  if (!config) return null;
+  const installed = !!(await getInstallationIdForRepo(config.owner, config.repo));
+  return { ...config, installed };
+});
+
+resolver.define('saveGithubConfig', async ({ payload, context }) => {
+  const { projectKey, owner, repo, branch, pathTemplate, enabled } = payload;
+  const accountId = context?.accountId ?? null;
+  if (!(await canEditProject(projectKey, accountId))) {
+    throw new Error('You need edit permission on this project to change its GitHub sync settings.');
+  }
+  if (!owner || !repo) throw new Error('owner and repo are required.');
+
+  const installationId = await getInstallationIdForRepo(owner, repo);
+  if (!installationId) {
+    throw new Error(
+      `The GitHub App isn't installed on ${owner}/${repo} yet. Install it on that repository, then try again.`
+    );
+  }
+
+  const config = {
+    projectKey, owner, repo,
+    branch: branch || 'main',
+    pathTemplate: pathTemplate || 'workflows/{id}.bpmn',
+    enabled: enabled !== false,
+    updatedAt: new Date().toISOString(),
+    updatedBy: accountId,
+  };
+  await kvs.set(githubConfigKey(projectKey), config);
+  return { ...config, installed: true };
 });
 
 // Self-service diagnostic for the per-user PLG activation flags. Lets a
@@ -458,8 +510,33 @@ resolver.define('saveBpmnDiagram', async ({ payload, context }) => {
     console.error('Realtime publish failed (non-fatal):', e);
   }
 
+  // GitOps — best-effort mirror of this save to the project's connected
+  // repo, if any. Never blocks or fails the save itself: a broken/renamed
+  // repo connection shouldn't stop someone from saving their diagram.
+  let gitops = null;
+  const ghConfig = projectKey ? await kvs.get(githubConfigKey(projectKey)) : null;
+  if (ghConfig?.enabled) {
+    try {
+      const installationId = await getInstallationIdForRepo(ghConfig.owner, ghConfig.repo);
+      if (!installationId) throw new Error(`app not installed on ${ghConfig.owner}/${ghConfig.repo}`);
+      const path = renderGithubPath(ghConfig.pathTemplate, { id, name });
+      const commitMessage = versionEntry.message
+        ? `${vName}: ${versionEntry.message}` : `${name}: ${vName} (via Portfolio Manager)`;
+      gitops = await pushFileToGithub({
+        installationId, owner: ghConfig.owner, repo: ghConfig.repo,
+        branch: ghConfig.branch, path, content: xml, message: commitMessage,
+      });
+      gitops = { ...gitops, path, pushedAt: new Date().toISOString() };
+      record.gitops = gitops;
+      await kvs.set(bpmnDiagramKey(id), record);
+    } catch (e) {
+      console.error('GitOps push failed (non-fatal):', e);
+      gitops = { error: e.message };
+    }
+  }
+
   // Return the flag ONLY in the response payload
-  return { ...record, firstDiagramForUser };
+  return { ...record, firstDiagramForUser, gitops };
 });
 
 resolver.define('deleteBpmnDiagram', async ({ payload, context }) => {
@@ -656,4 +733,4 @@ resolver.define('revertBpmnDiagram', async ({ payload, context }) => {
 });
 
 export const handler = resolver.getDefinitions();
-export { automationEngine };
+export { automationEngine, handleGithubWebhook };

@@ -34,9 +34,16 @@ jest.mock('@forge/realtime', () => ({
   publish: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('./github', () => ({
+  pushFileToGithub: jest.fn(),
+  getInstallationIdForRepo: jest.fn(),
+  handleGithubWebhook: jest.fn(),
+}));
+
 import { handler } from './index';
 import api, { route } from '@forge/api';
 import { kvs } from '@forge/kvs';
+import { pushFileToGithub, getInstallationIdForRepo } from './github';
 
 // route mock – simply concatenates strings (URLSearchParams is converted to string automatically)
 route.mockImplementation((strings, ...values) => {
@@ -56,6 +63,9 @@ let fakeStorage;
 beforeEach(() => {
   requestJiraMock = jest.fn();
   api.asUser.mockReturnValue({ requestJira: requestJiraMock });
+
+  pushFileToGithub.mockReset();
+  getInstallationIdForRepo.mockReset();
 
   fakeStorage = new Map();
   kvs.get.mockReset().mockImplementation((key) => Promise.resolve(fakeStorage.get(key)));
@@ -491,12 +501,14 @@ describe('BPMN diagrams (getCurrentUser, getBpmnDiagrams, getBpmnDiagram, saveBp
 
     mockProjectExists(true);
     const fetched = await getResolver('getBpmnDiagram')({ payload: { diagramId: created.id } });
-    // saveBpmnDiagram's response includes a transient firstDiagramForUser
-    // flag (for the frontend's PLG event choice) that's intentionally not
-    // persisted to KVS, so the fetched record won't carry it. getBpmnDiagram
-    // also adds a fresh projectExists check that saveBpmnDiagram doesn't do.
-    const { firstDiagramForUser, ...persisted } = created;
+    // saveBpmnDiagram's response includes two transient fields that aren't
+    // persisted to KVS: firstDiagramForUser (for the frontend's PLG event
+    // choice) and gitops (null unless the project has a GitHub sync
+    // configured). getBpmnDiagram also adds a fresh projectExists check
+    // that saveBpmnDiagram doesn't do.
+    const { firstDiagramForUser, gitops, ...persisted } = created;
     expect(firstDiagramForUser).toBe(true);
+    expect(gitops).toBeNull();
     expect(fetched).toEqual({ ...persisted, projectExists: true });
 
     await expect(
@@ -725,5 +737,120 @@ describe('BPMN diagrams (getCurrentUser, getBpmnDiagrams, getBpmnDiagram, saveBp
         context: { accountId: LEAD_ACCOUNT_ID },
       })
     ).rejects.toThrow('already the latest');
+  });
+});
+
+// ─── GitHub sync (getGithubConfig, saveGithubConfig, GitOps push) ────
+describe('GitHub sync', () => {
+  const LEAD_ACCOUNT_ID = 'lead-acc-1';
+  const OTHER_ACCOUNT_ID = 'other-acc-2';
+
+  function mockCanEdit(canEdit) {
+    mockJiraResponse({ permissions: { EDIT_ISSUES: { havePermission: canEdit } } });
+  }
+
+  it('getGithubConfig returns null when the project has never been configured', async () => {
+    expect(await getResolver('getGithubConfig')({ payload: { projectKey: 'TEST' } })).toBeNull();
+  });
+
+  it('saveGithubConfig rejects a user without edit permission', async () => {
+    mockCanEdit(false);
+    await expect(
+      getResolver('saveGithubConfig')({
+        payload: { projectKey: 'TEST', owner: 'acme', repo: 'widgets' },
+        context: { accountId: OTHER_ACCOUNT_ID },
+      })
+    ).rejects.toThrow('You need edit permission');
+  });
+
+  it('saveGithubConfig rejects a repo the GitHub App is not installed on', async () => {
+    mockCanEdit(true);
+    getInstallationIdForRepo.mockResolvedValueOnce(null);
+    await expect(
+      getResolver('saveGithubConfig')({
+        payload: { projectKey: 'TEST', owner: 'acme', repo: 'widgets' },
+        context: { accountId: LEAD_ACCOUNT_ID },
+      })
+    ).rejects.toThrow("isn't installed on acme/widgets");
+  });
+
+  it('saveGithubConfig stores defaults and getGithubConfig reports it as installed', async () => {
+    mockCanEdit(true);
+    getInstallationIdForRepo.mockResolvedValueOnce(555); // during save
+    const saved = await getResolver('saveGithubConfig')({
+      payload: { projectKey: 'TEST', owner: 'acme', repo: 'widgets' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+    expect(saved).toMatchObject({
+      projectKey: 'TEST', owner: 'acme', repo: 'widgets',
+      branch: 'main', pathTemplate: 'workflows/{id}.bpmn', enabled: true, installed: true,
+    });
+
+    getInstallationIdForRepo.mockResolvedValueOnce(555); // during the read-back
+    const fetched = await getResolver('getGithubConfig')({ payload: { projectKey: 'TEST' } });
+    expect(fetched).toMatchObject({ owner: 'acme', repo: 'widgets', installed: true });
+  });
+
+  it('saveBpmnDiagram pushes to the connected repo and records the result', async () => {
+    mockCanEdit(true); // saveGithubConfig's permission check
+    getInstallationIdForRepo.mockResolvedValueOnce(555); // saveGithubConfig's install check
+    await getResolver('saveGithubConfig')({
+      payload: { projectKey: 'TEST', owner: 'acme', repo: 'widgets', pathTemplate: 'workflows/{name}.bpmn' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+
+    mockCanEdit(true); // saveBpmnDiagram's own permission check
+    getInstallationIdForRepo.mockResolvedValueOnce(555); // saveBpmnDiagram's push
+    pushFileToGithub.mockResolvedValueOnce({
+      sha: 'abc', commitSha: 'def',
+      htmlUrl: 'https://github.com/acme/widgets/blob/main/workflows/order-process.bpmn',
+      commitUrl: 'https://github.com/acme/widgets/commit/def',
+    });
+
+    const saved = await getResolver('saveBpmnDiagram')({
+      payload: { diagramId: null, name: 'Order Process', projectKey: 'TEST', xml: '<xml/>' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+
+    expect(pushFileToGithub).toHaveBeenCalledWith(expect.objectContaining({
+      installationId: 555, owner: 'acme', repo: 'widgets', branch: 'main',
+      path: 'workflows/order-process.bpmn', content: '<xml/>',
+    }));
+    expect(saved.gitops).toMatchObject({ sha: 'abc', commitSha: 'def', path: 'workflows/order-process.bpmn' });
+
+    // and it's persisted on the stored record too, not just the response
+    const fetched = await getResolver('getBpmnDiagram')({ payload: { diagramId: saved.id } });
+    expect(fetched.gitops).toMatchObject({ sha: 'abc' });
+  });
+
+  it('a failed push is non-fatal: the diagram still saves, with the error surfaced on gitops', async () => {
+    mockCanEdit(true);
+    getInstallationIdForRepo.mockResolvedValueOnce(555);
+    await getResolver('saveGithubConfig')({
+      payload: { projectKey: 'TEST', owner: 'acme', repo: 'widgets' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+
+    mockCanEdit(true);
+    getInstallationIdForRepo.mockResolvedValueOnce(555);
+    pushFileToGithub.mockRejectedValueOnce(new Error('GitHub PUT contents failed: 409 conflict'));
+
+    const saved = await getResolver('saveBpmnDiagram')({
+      payload: { diagramId: null, name: 'Order Process', projectKey: 'TEST', xml: '<xml/>' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+
+    expect(saved.id).toBeDefined();
+    expect(saved.gitops).toEqual({ error: 'GitHub PUT contents failed: 409 conflict' });
+  });
+
+  it('does not attempt a push when no config exists for the project', async () => {
+    mockCanEdit(true);
+    const saved = await getResolver('saveBpmnDiagram')({
+      payload: { diagramId: null, name: 'Order Process', projectKey: 'UNCONFIGURED', xml: '<xml/>' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+    expect(pushFileToGithub).not.toHaveBeenCalled();
+    expect(saved.gitops).toBeNull();
   });
 });
