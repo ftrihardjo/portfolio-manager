@@ -6,6 +6,7 @@ import BpmnDiagramView from './bpmn/BpmnDiagramView';
 import BpmnEditorModal from './bpmn/BpmnEditorModal';   // ★ NEW
 import BpmnVersionList from './bpmn/BpmnVersionList';   // ★ NEW
 import BpmnCommitHistory from './bpmn/BpmnCommitHistory';
+import GithubSyncPanel from './github/GithubSyncPanel';
 import 'vis-network/styles/vis-network.css';
 import 'bpmn-js/dist/assets/diagram-js.css';
 import 'bpmn-js/dist/assets/bpmn-font/css/bpmn.css';
@@ -17,8 +18,8 @@ import 'bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css';
 import './App.css';
 // Add at the top of App.jsx, after existing imports:
 import { realtime } from '@forge/bridge';
-const TABS = ['projects', 'dependencies', 'roadmap', 'summary', 'bpmn'];
-const TAB_LABELS = { bpmn: 'BPMN' };
+const TABS = ['projects', 'dependencies', 'roadmap', 'summary', 'bpmn', 'github'];
+const TAB_LABELS = { bpmn: 'BPMN', github: 'GitHub Sync' };
 // Ships inside the component so it can't be lost to a stale CSS file.
 // Layout-critical (column lock + URL wrapping) AND the polish live here.
 const BPMN_SIDEBAR_CSS = `
@@ -541,6 +542,8 @@ export default function App() {
   const [bpmnDirty, setBpmnDirty] = useState(false);
   const [newDiagramName, setNewDiagramName] = useState('');
   const [newDiagramProjectKey, setNewDiagramProjectKey] = useState('');
+  const [githubProjectKey, setGithubProjectKey] = useState('');
+  const [canEditGithubProject, setCanEditGithubProject] = useState(false);
   const [diagramSearch, setDiagramSearch] = useState('');
   const [srAnnouncement, setSrAnnouncement] = useState('');
   const [sortBy, setSortBy] = useState('key');
@@ -1274,6 +1277,22 @@ export default function App() {
     });
     return () => { cancelled = true; };
   }, [bpmnDiagrams, currentUserAccountId]);
+
+  // Defaults the GitHub Sync tab's project picker to the first project once
+  // the list has loaded, then tracks edit permission for whichever project
+  // is currently selected there.
+  useEffect(() => {
+    if (!githubProjectKey && projects.length > 0) setGithubProjectKey(projects[0].key);
+  }, [projects, githubProjectKey]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!githubProjectKey || !currentUserAccountId) { setCanEditGithubProject(false); return undefined; }
+    invokeWithRetry('canEditProject', { projectKey: githubProjectKey })
+      .then((res) => { if (!cancelled) setCanEditGithubProject(!!res?.canEdit); })
+      .catch(() => { if (!cancelled) setCanEditGithubProject(false); });
+    return () => { cancelled = true; };
+  }, [githubProjectKey, currentUserAccountId]);
+
   const openDiagramMeta = useMemo(
     () => (selectedDiagramId ? bpmnDiagrams.find((d) => d.id === selectedDiagramId) : null),
     [selectedDiagramId, bpmnDiagrams]
@@ -2351,6 +2370,30 @@ export default function App() {
                 </div>
               </div>
             )}
+          </section>
+        )}
+        {activeTab === 'github' && (
+          <section className="github-section" id="panel-github" role="tabpanel">
+            <h2>GitHub Sync</h2>
+            <div style={{ padding: '0 20px' }}>
+              <div style={{ marginBottom: '14px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '4px' }} htmlFor="github-project-select">
+                  Project
+                </label>
+                <select
+                  id="github-project-select"
+                  value={githubProjectKey}
+                  onChange={(e) => setGithubProjectKey(e.target.value)}
+                  data-testid="github-project-select"
+                  style={{ padding: '6px 8px', minWidth: '260px' }}
+                >
+                  {projects.map((p) => (
+                    <option key={p.key} value={p.key}>{p.name} ({p.key})</option>
+                  ))}
+                </select>
+              </div>
+              <GithubSyncPanel projectKey={githubProjectKey} canEdit={canEditGithubProject} />
+            </div>
           </section>
         )}
       </main>
