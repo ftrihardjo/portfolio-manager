@@ -44,7 +44,8 @@ export async function getInstallationToken(installationId) {
 // the `installation` / `installation_repositories` webhook events, so we
 // record that mapping ourselves as those events arrive. Keyed by the
 // lowercase "owner/repo" full name.
-const installationKey = (fullName) => `github:installation:${fullName.toLowerCase()}`;
+const installationKey = (fullName) =>
+  `github:installation:${fullName.toLowerCase().replace(/\//g, '#')}`;
 
 export async function getInstallationIdForRepo(owner, repo) {
   return kvs.get(installationKey(`${owner}/${repo}`));
