@@ -668,6 +668,17 @@ export default function App() {
     loadProjects();
   }, []);
 
+  // Hydrate the acting user on mount. The GitHub Sync tab's permission gate
+  // (and the BPMN sidebar "you can edit / view only" labels) must not depend
+  // on the BPMN tab having been visited first in this session.
+  useEffect(() => {
+    let cancelled = false;
+    invokeWithRetry('getCurrentUser', {})
+      .then((u) => { if (!cancelled && u?.accountId) setCurrentUserAccountId(u.accountId); })
+      .catch(() => { /* stay null; panels remain view-only */ });
+    return () => { cancelled = true; };
+  }, []);
+
   // Poll for updates & Support WebSockets/Custom Events
   useEffect(() => {
     if (projects.length === 0) return;

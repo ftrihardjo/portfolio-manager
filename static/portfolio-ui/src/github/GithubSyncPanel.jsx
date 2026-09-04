@@ -172,7 +172,7 @@ export default function GithubSyncPanel({ projectKey, canEdit }) {
       )}
 
       <p style={{ fontSize: '11px', color: '#999', marginTop: '16px' }}>
-        The repository must already have the Portfolio Manager GitHub App installed on it.
+        The repository must already have the Process & Portfolio Manager GitHub App installed on it.
       </p>
     </div>
   );
