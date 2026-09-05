@@ -1,12 +1,5 @@
 import crypto from 'node:crypto';
 
-// Minimal fake of the `Response` class Forge injects for webtriggers —
-// just enough to assert on status/body like the real one.
-class FakeResponse {
-  status(code) { this._status = code; return this; }
-  body(text) { this._body = text; return this; }
-}
-
 jest.mock('@forge/api', () => ({
   __esModule: true,
   default: { fetch: jest.fn() },
@@ -22,7 +15,6 @@ jest.mock('@forge/kvs', () => ({
 import api from '@forge/api';
 import * as forgeApi from '@forge/api';
 import { kvs } from '@forge/kvs';
-forgeApi.Response = FakeResponse;
 
 import {
   getInstallationIdForRepo,
@@ -62,7 +54,7 @@ describe('getInstallationIdForRepo', () => {
   it('reads the lowercased owner/repo key from KVS', async () => {
     kvs.get.mockResolvedValue(999);
     const id = await getInstallationIdForRepo('Acme', 'Widgets');
-    expect(kvs.get).toHaveBeenCalledWith('github:installation:acme/widgets');
+    expect(kvs.get).toHaveBeenCalledWith('github:installation:acme#widgets');
     expect(id).toBe(999);
   });
 });
@@ -195,7 +187,7 @@ describe('pushFileToGithub', () => {
 describe('handleGithubWebhook', () => {
   it('rejects a request with an invalid signature', async () => {
     const res = await handleGithubWebhook(signedRequest({ __event: 'installation' }, { badSignature: true }));
-    expect(res._status).toBe(401);
+    expect(res.status).toBe(401);   // was: res._status
   });
 
   it('records the installation directory on "installation: created"', async () => {
@@ -206,9 +198,9 @@ describe('handleGithubWebhook', () => {
       repositories: [{ full_name: 'Acme/Widgets' }, { full_name: 'Acme/Gadgets' }],
     };
     const res = await handleGithubWebhook(signedRequest(payload));
-    expect(res._status).toBe(200);
-    expect(kvs.set).toHaveBeenCalledWith('github:installation:acme/widgets', 7);
-    expect(kvs.set).toHaveBeenCalledWith('github:installation:acme/gadgets', 7);
+    expect(res.status).toBe(200);
+    expect(kvs.set).toHaveBeenCalledWith('github:installation:acme#widgets', 7);
+    expect(kvs.set).toHaveBeenCalledWith('github:installation:acme#gadgets', 7);
   });
 
   it('clears the installation directory on "installation: deleted"', async () => {
@@ -219,8 +211,8 @@ describe('handleGithubWebhook', () => {
       repositories: [{ full_name: 'Acme/Widgets' }],
     };
     const res = await handleGithubWebhook(signedRequest(payload));
-    expect(res._status).toBe(200);
-    expect(kvs.delete).toHaveBeenCalledWith('github:installation:acme/widgets');
+    expect(res.status).toBe(200);
+    expect(kvs.delete).toHaveBeenCalledWith('github:installation:acme#widgets');
   });
 
   it('adds newly-granted repos on "installation_repositories: added"', async () => {
@@ -231,7 +223,7 @@ describe('handleGithubWebhook', () => {
       repositories_added: [{ full_name: 'Acme/NewRepo' }],
     };
     const res = await handleGithubWebhook(signedRequest(payload));
-    expect(res._status).toBe(200);
-    expect(kvs.set).toHaveBeenCalledWith('github:installation:acme/newrepo', 7);
+    expect(res.status).toBe(200);
+    expect(kvs.set).toHaveBeenCalledWith('github:installation:acme#newrepo', 7);
   });
 });

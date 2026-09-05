@@ -12,7 +12,7 @@
 //     - GITHUB_APP_PRIVATE_KEY_B64 (the .pem file, base64-encoded)
 //     - GITHUB_WEBHOOK_SECRET
 import crypto from 'node:crypto';
-import api, { Response } from '@forge/api';
+import api from '@forge/api';
 import { kvs } from '@forge/kvs';
 
 const b64url = (b) => b.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -141,7 +141,7 @@ export async function handleGithubWebhook(request) {
 
   const ok = Buffer.from(sig).length === Buffer.from(expected).length &&
     crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
-  if (!ok) return new Response().status(401).body('bad signature');
+  if (!ok) return { status: 401, body: 'bad signature' };
 
   const event = (request.headers['x-github-event'] || [])[0];
   const payload = JSON.parse(request.body || '{}');
@@ -166,5 +166,5 @@ export async function handleGithubWebhook(request) {
     // existing resolvers / Jira API to update portfolio & roadmap metrics
     // const token = await getInstallationToken(payload.installation.id);
   }
-  return new Response().status(200).body('ok');
+  return { status: 200, body: 'ok' };
 }
