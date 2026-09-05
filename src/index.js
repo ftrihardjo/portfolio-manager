@@ -533,6 +533,8 @@ resolver.define('saveBpmnDiagram', async ({ payload, context }) => {
       console.error('GitOps push failed (non-fatal):', e);
       gitops = { error: e.message };
     }
+  } else {
+    console.warn(`GitOps skipped for ${projectKey}: hasConfig=${!!ghConfig} enabled=${ghConfig?.enabled}`);
   }
 
   // Return the flag ONLY in the response payload
