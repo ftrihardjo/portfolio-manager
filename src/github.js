@@ -26,12 +26,27 @@ function githubAppJwt(appId, pem) {
 }
 
 export async function getInstallationToken(installationId) {
-  const pem = Buffer.from(process.env.GITHUB_APP_PRIVATE_KEY_B64, 'base64').toString('utf8');
+  // 1. Try environment variables first (old way)
+  let appId = process.env.GITHUB_APP_ID;
+  let pemB64 = process.env.GITHUB_APP_PRIVATE_KEY_B64;
+
+  // 2. Fall back to the UI settings page (KVS)
+  if (!appId || !pemB64) {
+    appId = (await kvs.get('github_app_id')) || appId;
+    pemB64 = (await kvs.getSecret('github_private_key')) || pemB64;
+  }
+
+  // If still missing, throw a clear error so it shows up in the logs
+  if (!appId || !pemB64) {
+    throw new Error('GitHub App credentials not found. Set them via the UI or Environment Variables.');
+  }
+
+  const pem = Buffer.from(pemB64, 'base64').toString('utf8');
   const res = await api.fetch(`https://api.github.com/app/installations/${installationId}/access_tokens`, {
     method: 'POST',
     headers: {
       Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${githubAppJwt(process.env.GITHUB_APP_ID, pem)}`,
+      Authorization: `Bearer ${githubAppJwt(appId, pem)}`, // Use the resolved appId
       'User-Agent': USER_AGENT,
     },
   });
