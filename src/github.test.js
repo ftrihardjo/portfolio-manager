@@ -226,4 +226,31 @@ describe('handleGithubWebhook', () => {
     expect(res.status).toBe(200);
     expect(kvs.set).toHaveBeenCalledWith('github:installation:acme#newrepo', 7);
   });
+
+  it('falls back to KVS when GITHUB_WEBHOOK_SECRET env var is missing', async () => {
+    delete process.env.GITHUB_WEBHOOK_SECRET;
+    kvs.getSecret = jest.fn().mockResolvedValue(WEBHOOK_SECRET);
+
+    const payload = {
+      __event: 'installation',
+      action: 'created',
+      installation: { id: 7 },
+      repositories: [{ full_name: 'Acme/Widgets' }],
+    };
+
+    // Re-sign with the same secret (simulating what GitHub sends)
+    const body = JSON.stringify(payload);
+    const sig = 'sha256=' + crypto.createHmac('sha256', WEBHOOK_SECRET).update(body, 'utf8').digest('hex');
+    const request = {
+      body,
+      headers: {
+        'x-github-event': ['installation'],
+        'x-hub-signature-256': [sig],
+      },
+    };
+
+    const res = await handleGithubWebhook(request);
+    expect(res.status).toBe(200);
+    expect(kvs.getSecret).toHaveBeenCalledWith('github_webhook_secret');
+  });
 });

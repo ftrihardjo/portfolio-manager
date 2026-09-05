@@ -133,10 +133,20 @@ export async function pushFileToGithub({ installationId, owner, repo, branch, pa
 }
 
 export async function handleGithubWebhook(request) {
-  // Forge webtrigger headers are { name: string[] }
+  // 1. Resolve the webhook secret (env var first, KVS fallback)
+  let webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    webhookSecret = await kvs.getSecret('github_webhook_secret');
+  }
+  if (!webhookSecret) {
+    console.error('GITHUB_WEBHOOK_SECRET not found in env vars or KVS');
+    return { status: 500, body: 'webhook secret not configured' };
+  }
+
+  // 2. Verify signature
   const sig = (request.headers['x-hub-signature-256'] || [])[0] || '';
   const expected = 'sha256=' + crypto
-    .createHmac('sha256', process.env.GITHUB_WEBHOOK_SECRET)
+    .createHmac('sha256', webhookSecret)
     .update(request.body, 'utf8').digest('hex');
 
   const ok = Buffer.from(sig).length === Buffer.from(expected).length &&
