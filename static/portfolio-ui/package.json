@@ -15,11 +15,9 @@
     "dmn-js-properties-panel": "^3.5.0",
     "jspdf": "^4.2.1",
     "mermaid": "^11.17.2",
-    "plantuml-encoder": "^1.4.0",
     "preact": "^10.22.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "react-ga4": "^3.0.1",
     "react-router-dom": "7.18.2",
     "vis-network": "^10.1.0"
   },

@@ -655,5 +655,277 @@ resolver.define('revertBpmnDiagram', async ({ payload, context }) => {
   return record;
 });
 
+// ─── UML library (Mermaid) + Realtime collaborative editing ─────────
+// Mirrors the BPMN library above: same KVS-backed append-only version
+// ledger, same permission/conflict/realtime contract. The only real
+// difference is the stored payload is a `code` string (Mermaid source)
+// instead of `xml`, since there's no bpmn-js canvas involved.
+const UML_INDEX_KEY = 'uml:index';
+const umlDiagramKey = (id) => `uml:diagram:${id}`;
+const umlVersionKey = (id, v) => `uml:diagram:${id}:v${v}`;
+const UML_REALTIME_CHANNEL = 'uml-diagram-events';
+
+resolver.define('touchUmlVersion', async ({ payload }) => {
+  const { diagramId, version } = payload;
+  const key = umlDiagramKey(diagramId);
+  const diagram = await kvs.get(key);
+  if (!diagram) return { touched: false };
+  const now = new Date().toISOString();
+  let changed = false;
+  if (Array.isArray(diagram.versions)) {
+    const v = diagram.versions.find((x) => x.version === version);
+    if (v) { v.lastAccessedAt = now; changed = true; }
+  }
+  if (diagram.version === version) { diagram.lastAccessedAt = now; changed = true; }
+  if (changed) {
+    await kvs.set(key, diagram);
+    const blob = await kvs.get(umlVersionKey(diagramId, version));
+    if (blob) { blob.lastAccessedAt = now; await kvs.set(umlVersionKey(diagramId, version), blob); }
+  }
+  return { touched: changed, lastAccessedAt: now };
+});
+
+resolver.define('getUmlDiagrams', async () => {
+  const diagrams = (await kvs.get(UML_INDEX_KEY)) || [];
+  const distinctKeys = [...new Set(diagrams.map((d) => d.projectKey).filter(Boolean))];
+  const existsByKey = {};
+  await Promise.all(distinctKeys.map(async (key) => { existsByKey[key] = await projectKeyExists(key); }));
+  return diagrams.map((d) => ({ ...d, projectExists: d.projectKey ? !!existsByKey[d.projectKey] : true }));
+});
+
+resolver.define('getUmlDiagram', async ({ payload }) => {
+  const diagram = await kvs.get(umlDiagramKey(payload.diagramId));
+  if (!diagram) throw new Error(`Diagram ${payload.diagramId} not found`);
+  if (!Array.isArray(diagram.versions) && typeof diagram.version === 'number') {
+    diagram.versions = [{
+      version: diagram.version,
+      name: diagram.latestVersionName || `v${diagram.version}`,
+      savedAt: diagram.updatedAt,
+      savedBy: diagram.lastEditedBy,
+    }];
+  }
+  if (Array.isArray(diagram.versions)) {
+    const cache = (await kvs.get(USER_CACHE_KEY)) || {};
+    for (const v of diagram.versions) {
+      v.savedByDisplay = cache[v.savedBy] || v.savedBy || 'Unknown';
+    }
+    diagram.lastEditedByDisplay = cache[diagram.lastEditedBy] || diagram.lastEditedBy || 'Unknown';
+  }
+  diagram.projectExists = diagram.projectKey ? await projectKeyExists(diagram.projectKey) : true;
+  return diagram;
+});
+
+resolver.define('getUmlDiagramVersion', async ({ payload }) => {
+  const { diagramId, version } = payload;
+  const stored = await kvs.get(umlVersionKey(diagramId, version));
+  if (stored) {
+    stored.savedByDisplay = await resolveDisplayName(stored.savedBy);
+    return stored;
+  }
+  const diagram = await kvs.get(umlDiagramKey(diagramId));
+  if (!diagram) throw new Error(`Diagram ${diagramId} not found`);
+  if (diagram.version === version) {
+    return {
+      version,
+      name: diagram.latestVersionName || `v${version}`,
+      savedAt: diagram.updatedAt,
+      savedBy: diagram.lastEditedBy,
+      savedByDisplay: await resolveDisplayName(diagram.lastEditedBy),
+      code: diagram.code,
+    };
+  }
+  throw new Error(`Version ${version} not found for diagram ${diagramId}`);
+});
+
+resolver.define('saveUmlDiagram', async ({ payload, context }) => {
+  const { diagramId, name, projectKey, code, baseVersion, versionName } = payload;
+  const accountId = context?.accountId ?? null;
+  if (!(await canEditProject(projectKey, accountId))) {
+    throw new Error('You need edit permission on this project to save this diagram.');
+  }
+  const id = diagramId || `uml-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const now = new Date().toISOString();
+  const existing = diagramId ? await kvs.get(umlDiagramKey(id)) : null;
+  if (!existing && diagramId && (await kvs.get(`uml:tombstone:${diagramId}`))) {
+    throw new Error('This diagram was deleted. Close it and create a new one.');
+  }
+
+  if (existing && typeof baseVersion === 'number' && baseVersion !== existing.version) {
+    const editorName = await resolveDisplayName(existing.lastEditedBy);
+    throw new Error(
+      `Conflict: this diagram was saved by ${editorName} at ${existing.updatedAt}. Reload before saving.`
+    );
+  }
+
+  const version = (existing?.version || 0) + 1;
+  const vName = (typeof versionName === 'string' && versionName.trim())
+    ? versionName.trim() : `v${version}`;
+  const editorDisplay = await resolveDisplayName(accountId);
+  const versionEntry = {
+    version, name: vName, savedAt: now,
+    savedBy: accountId, savedByDisplay: editorDisplay,
+    lastAccessedAt: now,
+    kind: 'save',
+    parentVersion: existing?.version ?? null,
+    message: (typeof payload.message === 'string' && payload.message.trim())
+      ? payload.message.trim() : '',
+  };
+
+  let versions = Array.isArray(existing?.versions) ? existing.versions.slice() : [];
+  if (!versions.length && existing && typeof existing.version === 'number') {
+    const legacy = {
+      version: existing.version,
+      name: existing.latestVersionName || `v${existing.version}`,
+      savedAt: existing.updatedAt,
+      savedBy: existing.lastEditedBy,
+      savedByDisplay: await resolveDisplayName(existing.lastEditedBy),
+    };
+    versions.push(legacy);
+    await kvs.set(umlVersionKey(id, existing.version), { ...legacy, code: existing.code });
+  }
+  versions.push(versionEntry);
+  await kvs.set(umlVersionKey(id, version), { ...versionEntry, code });
+
+  const record = {
+    id, name, projectKey, code,
+    createdAt: existing?.createdAt ?? now, updatedAt: now,
+    version, lastEditedBy: accountId, lastEditedByDisplay: editorDisplay,
+    versions, latestVersionName: vName,
+  };
+  await kvs.set(umlDiagramKey(id), record);
+
+  const index = (await kvs.get(UML_INDEX_KEY)) || [];
+  const meta = {
+    id, name, projectKey, updatedAt: now,
+    lastEditedBy: accountId, lastEditedByDisplay: editorDisplay,
+    version, latestVersionName: vName,
+  };
+  const nextIndex = diagramId ? index.map((d) => (d.id === id ? meta : d)) : [...index, meta];
+  await kvs.set(UML_INDEX_KEY, nextIndex);
+
+  try {
+    await publish(UML_REALTIME_CHANNEL, {
+      type: 'diagram:saved', diagramId: id, version,
+      versionName: vName, savedAt: now,
+      savedBy: accountId, savedByDisplay: editorDisplay,
+      projectKey,
+    });
+  } catch (e) {
+    console.error('Realtime publish failed (non-fatal):', e);
+  }
+
+  return record;
+});
+
+resolver.define('deleteUmlDiagram', async ({ payload, context }) => {
+  const { diagramId } = payload;
+  const accountId = context?.accountId ?? null;
+  const diagram = await kvs.get(umlDiagramKey(diagramId));
+
+  if (!diagram) return { deleted: false };
+
+  const projectStillExists = await projectKeyExists(diagram.projectKey);
+  if (projectStillExists) {
+    if (!(await canEditProject(diagram.projectKey, accountId))) {
+      throw new Error('You need edit permission on this project to delete this diagram.');
+    }
+  } else if (!accountId) {
+    throw new Error('You must be signed in to delete this diagram.');
+  }
+
+  const versions = Array.isArray(diagram.versions) ? diagram.versions
+    : (typeof diagram.version === 'number' ? [{ version: diagram.version }] : []);
+
+  await Promise.all([
+    ...versions.map((v) => kvs.delete(umlVersionKey(diagramId, v.version)).catch(() => {})),
+    kvs.delete(`uml:lock:${diagramId}`).catch(() => {}),
+    kvs.delete(umlDiagramKey(diagramId)),
+  ]);
+
+  const index = (await kvs.get(UML_INDEX_KEY)) || [];
+  await kvs.set(UML_INDEX_KEY, index.filter((d) => d.id !== diagramId));
+  await kvs.set(`uml:tombstone:${diagramId}`, true);
+
+  try {
+    await publish(UML_REALTIME_CHANNEL, { type: 'diagram:deleted', diagramId, deletedBy: accountId });
+  } catch (e) {
+    console.error('Realtime publish failed (non-fatal):', e);
+  }
+
+  return { deleted: true };
+});
+
+resolver.define('revertUmlDiagram', async ({ payload, context }) => {
+  const { diagramId, toVersion, baseVersion, message } = payload;
+  const accountId = context?.accountId ?? null;
+  const diagram = await kvs.get(umlDiagramKey(diagramId));
+  if (!diagram) throw new Error(`Diagram ${diagramId} not found`);
+  if (!(await canEditProject(diagram.projectKey, accountId))) {
+    throw new Error('You need edit permission on this project to revert this diagram.');
+  }
+  if (typeof baseVersion === 'number' && baseVersion !== diagram.version) {
+    const editorName = await resolveDisplayName(diagram.lastEditedBy);
+    throw new Error(
+      `Conflict: this diagram was saved by ${editorName} at ${diagram.updatedAt}. Reload before reverting.`
+    );
+  }
+  if (toVersion === diagram.version) {
+    throw new Error('That version is already the latest — nothing to revert.');
+  }
+
+  let targetCode = null;
+  let targetName = `v${toVersion}`;
+  const blob = await kvs.get(umlVersionKey(diagramId, toVersion));
+  if (blob) { targetCode = blob.code; targetName = blob.name || targetName; }
+  else if (diagram.version === toVersion) { targetCode = diagram.code; targetName = diagram.latestVersionName || targetName; }
+  else throw new Error(`Version ${toVersion} not found; cannot revert.`);
+
+  const now = new Date().toISOString();
+  const version = diagram.version + 1;
+  const editorDisplay = await resolveDisplayName(accountId);
+  const autoMsg = `Reverted to ${targetName} (v${toVersion})`;
+  const versionEntry = {
+    version, name: `v${version}`, savedAt: now,
+    savedBy: accountId, savedByDisplay: editorDisplay, lastAccessedAt: now,
+    kind: 'revert',
+    parentVersion: diagram.version,
+    revertedFromVersion: toVersion,
+    message: (typeof message === 'string' && message.trim()) ? message.trim() : autoMsg,
+  };
+
+  const versions = Array.isArray(diagram.versions) ? diagram.versions.slice() : [];
+  versions.push(versionEntry);
+  await kvs.set(umlVersionKey(diagramId, version), { ...versionEntry, code: targetCode });
+
+  const record = {
+    ...diagram,
+    code: targetCode,
+    updatedAt: now, version,
+    lastEditedBy: accountId, lastEditedByDisplay: editorDisplay,
+    versions, latestVersionName: versionEntry.name,
+  };
+  await kvs.set(umlDiagramKey(diagramId), record);
+
+  const index = (await kvs.get(UML_INDEX_KEY)) || [];
+  const meta = {
+    id: diagramId, name: diagram.name, projectKey: diagram.projectKey, updatedAt: now,
+    lastEditedBy: accountId, lastEditedByDisplay: editorDisplay,
+    version, latestVersionName: versionEntry.name,
+  };
+  await kvs.set(UML_INDEX_KEY, index.map((d) => (d.id === diagramId ? meta : d)));
+
+  try {
+    await publish(UML_REALTIME_CHANNEL, {
+      type: 'diagram:saved', diagramId, version,
+      versionName: versionEntry.name, savedAt: now,
+      savedBy: accountId, savedByDisplay: editorDisplay,
+      projectKey: diagram.projectKey,
+      kind: 'revert', revertedFromVersion: toVersion,
+    });
+  } catch (e) { console.error('Realtime publish failed (non-fatal):', e); }
+
+  return record;
+});
+
 export const handler = resolver.getDefinitions();
 export { automationEngine };

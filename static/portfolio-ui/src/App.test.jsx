@@ -1142,6 +1142,129 @@ describe('App', () => {
     });
   });
 
+  describe('UML tab', () => {
+    const projectsMock = [
+      { id: 1, key: 'PROJ1', name: 'Alpha', lead: 'John', leadAccountId: 'acc-lead', avatarUrl: null },
+      { id: 2, key: 'PROJ2', name: 'Beta', lead: 'Jane', leadAccountId: 'acc-other', avatarUrl: null },
+    ];
+
+    it('shows an empty state and lets a user with edit permission create a new diagram', async () => {
+      mockInvoke({
+        getProjects: projectsMock,
+        getCurrentUser: { accountId: 'acc-lead' },
+        getUmlDiagrams: [],
+        canEditProject: ({ projectKey }) => ({ canEdit: projectKey === 'PROJ1' }),
+      });
+
+      render(<App />);
+      await waitFor(() => screen.getByText('Alpha'));
+      fireEvent.click(screen.getByRole('tab', { name: /UML/i }));
+
+      await waitFor(() => expect(screen.getByTestId('uml-diagram-list')).toHaveTextContent('No diagrams yet.'));
+
+      fireEvent.click(screen.getByTestId('new-uml-diagram'));
+
+      await waitFor(() => expect(screen.getByTestId('uml-code-editor')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByTestId('save-uml')).toBeInTheDocument());
+    });
+
+    it('creates a diagram as a user with edit permission and it appears in the library', async () => {
+      let savedDiagram = null;
+      mockInvoke({
+        getProjects: projectsMock,
+        getCurrentUser: { accountId: 'acc-lead' },
+        getUmlDiagrams: () => (savedDiagram ? [savedDiagram] : []),
+        canEditProject: ({ projectKey }) => ({ canEdit: projectKey === 'PROJ1' }),
+        saveUmlDiagram: (payload) => {
+          savedDiagram = { id: 'uml-1', name: payload.name, projectKey: payload.projectKey, updatedAt: '2026-01-01' };
+          return { ...savedDiagram, code: payload.code, createdAt: '2026-01-01', version: 1 };
+        },
+      });
+
+      render(<App />);
+      await waitFor(() => screen.getByText('Alpha'));
+      fireEvent.click(screen.getByRole('tab', { name: /UML/i }));
+      await waitFor(() => screen.getByTestId('new-uml-diagram'));
+
+      fireEvent.click(screen.getByTestId('new-uml-diagram'));
+      fireEvent.change(screen.getByTestId('new-uml-diagram-name'), { target: { value: 'Domain Model' } });
+      fireEvent.change(screen.getByTestId('new-uml-diagram-project'), { target: { value: 'PROJ1' } });
+      await waitFor(() => screen.getByTestId('uml-version-name'));
+      fireEvent.change(screen.getByTestId('uml-version-name'), { target: { value: 'Initial version' } });
+      fireEvent.change(screen.getByTestId('uml-code-editor'), { target: { value: 'classDiagram\n  class Foo' } });
+      await waitFor(() => expect(screen.getByTestId('save-uml')).not.toBeDisabled());
+      fireEvent.click(screen.getByTestId('save-uml'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('uml-diagram-list')).toHaveTextContent('Domain Model');
+      });
+    });
+
+    it('shows a read-only viewer (no Save button) for a diagram the user has no edit permission on', async () => {
+      mockInvoke({
+        getProjects: projectsMock,
+        getCurrentUser: { accountId: 'acc-not-a-lead' },
+        getUmlDiagrams: [{ id: 'uml-1', name: 'Order Model', projectKey: 'PROJ1', updatedAt: '2026-01-01', version: 1 }],
+        getUmlDiagram: {
+          id: 'uml-1', name: 'Order Model', projectKey: 'PROJ1', code: 'classDiagram\n  class Order', version: 1,
+          versions: [{ version: 1, name: 'v1', savedAt: '2026-01-01', savedBy: 'acc-x', savedByDisplay: 'Someone' }],
+        },
+        getUmlDiagramVersion: { version: 1, code: 'classDiagram\n  class Order', savedBy: 'acc-x' },
+        touchUmlVersion: () => ({ touched: true }),
+        canEditProject: () => ({ canEdit: false }),
+      });
+      render(<App />);
+      await waitFor(() => screen.getByText('Alpha'));
+      fireEvent.click(screen.getByRole('tab', { name: /UML/i }));
+      await waitFor(() => screen.getByText('Order Model'));
+      fireEvent.click(screen.getByText('Order Model'));
+      await waitFor(() => expect(screen.getByTestId('bpmn-version-list')).toBeInTheDocument());
+      fireEvent.click(screen.getByTestId('bpmn-version-row-1'));
+      await waitFor(() => expect(screen.getByTestId('uml-code-editor')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getAllByText(/View only/i).length).toBeGreaterThan(0));
+      expect(screen.queryByTestId('save-uml')).not.toBeInTheDocument();
+    });
+
+    it('shows the new commit after a successful revert', async () => {
+      let record = {
+        id: 'uml-1', name: 'Order Model', projectKey: 'PROJ1', code: 'classDiagram\n  class Order', version: 2,
+        versions: [
+          { version: 1, name: 'v1', savedAt: '2026-01-01', savedBy: 'acc-lead', savedByDisplay: 'Lead' },
+          { version: 2, name: 'v2', savedAt: '2026-01-02', savedBy: 'acc-lead', savedByDisplay: 'Lead' },
+        ],
+      };
+      mockInvoke({
+        getProjects: projectsMock,
+        getCurrentUser: { accountId: 'acc-lead' },
+        getUmlDiagrams: () => [{ id: record.id, name: record.name, projectKey: record.projectKey, updatedAt: '2026-01-02', version: record.version }],
+        getUmlDiagram: () => record,
+        canEditProject: () => ({ canEdit: true }),
+        revertUmlDiagram: ({ toVersion }) => {
+          record = {
+            ...record,
+            version: 3,
+            versions: [...record.versions, { version: 3, name: `Reverted to v${toVersion}`, kind: 'revert', revertedFromVersion: toVersion, savedBy: 'acc-lead' }],
+          };
+          return record;
+        },
+      });
+
+      render(<App />);
+      await waitFor(() => screen.getByText('Alpha'));
+      fireEvent.click(screen.getByRole('tab', { name: /UML/i }));
+      await waitFor(() => screen.getByText('Order Model'));
+      fireEvent.click(screen.getByText('Order Model'));
+      await waitFor(() => expect(screen.getByTestId('bpmn-version-list')).toBeInTheDocument());
+
+      fireEvent.click(screen.getByTestId('revert-commit-1'));
+      fireEvent.click(screen.getByText('Confirm revert'));
+
+      await waitFor(async () => {
+        expect((await screen.findAllByText(/Reverted to v1/)).length).toBeGreaterThan(0);
+      });
+    });
+  });
+
   // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // ERROR HANDLING & RETRY TESTS
   // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

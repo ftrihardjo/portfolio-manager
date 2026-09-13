@@ -6,6 +6,10 @@ import BpmnDiagramView from './bpmn/BpmnDiagramView';
 import BpmnEditorModal from './bpmn/BpmnEditorModal';   // ★ NEW
 import BpmnVersionList from './bpmn/BpmnVersionList';   // ★ NEW
 import BpmnCommitHistory from './bpmn/BpmnCommitHistory';
+import UmlDiagramView, { EMPTY_UML_CODE } from './uml/UmlDiagramView';
+import UmlEditorModal from './uml/UmlEditorModal';
+// UML reuses BpmnVersionList / BpmnCommitHistory directly — both operate on
+// a generic { versions: [...] } record shape with no BPMN-specific fields.
 import 'vis-network/styles/vis-network.css';
 import 'bpmn-js/dist/assets/diagram-js.css';
 import 'bpmn-js/dist/assets/bpmn-font/css/bpmn.css';
@@ -17,8 +21,8 @@ import 'bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css';
 import './App.css';
 // Add at the top of App.jsx, after existing imports:
 import { realtime } from '@forge/bridge';
-const TABS = ['projects', 'dependencies', 'roadmap', 'summary', 'bpmn'];
-const TAB_LABELS = { bpmn: 'BPMN' };
+const TABS = ['projects', 'dependencies', 'roadmap', 'summary', 'bpmn', 'uml'];
+const TAB_LABELS = { bpmn: 'BPMN', uml: 'UML' };
 // Ships inside the component so it can't be lost to a stale CSS file.
 // Layout-critical (column lock + URL wrapping) AND the polish live here.
 const BPMN_SIDEBAR_CSS = `
@@ -513,6 +517,39 @@ export default function App() {
       setError(e.message);
     }
   };
+
+  const openUmlCommitHistory = async (id) => {
+    setError(null);
+    try {
+      const rec = await invoke('getUmlDiagram', { diagramId: id });
+      setUmlHistoryRecord(rec);
+      setSelectedUmlDiagramId(id);
+      const ids = (rec.versions || []).map((v) => v.savedBy).filter(Boolean);
+      if (rec.lastEditedBy) ids.push(rec.lastEditedBy);
+      await resolveDisplayNames(ids);
+    } catch (e) { setError(e.message); }
+  };
+
+  const handleUmlRevert = async (toVersion) => {
+    if (!umlHistoryRecord) return;
+    try {
+      const rec = await invoke('revertUmlDiagram', {
+        diagramId: umlHistoryRecord.id, toVersion, baseVersion: umlHistoryRecord.version,
+      });
+      setUmlHistoryRecord(rec);
+      upsertUmlDiagramMeta(rec);
+      setUmlDiagrams(await invoke('getUmlDiagrams'));
+      setSrAnnouncement(`Reverted to v${toVersion} as new commit v${rec.version}`);
+    } catch (e) {
+      if (e.message && e.message.startsWith('Conflict:')) {
+        setUmlConflict({
+          lastEditedBy: e.message.match(/saved by (.+?) at/)?.[1] || 'another user',
+          updatedAt: e.message.match(/at (.+?)\./)?.[1] || new Date().toISOString(),
+        });
+      }
+      setError(e.message);
+    }
+  };
   // ★ Display name cache
   const [displayNameCache, setDisplayNameCache] = useState({});
   // ★ Editor now lives in a full-page modal; the main area shows either the
@@ -559,6 +596,31 @@ export default function App() {
   const [versionName, setVersionName] = useState('');  const bpmnDirtyRef = useRef(false);
   const [commitMessage, setCommitMessage] = useState('');
   useEffect(() => { bpmnDirtyRef.current = bpmnDirty; }, [bpmnDirty]);
+
+  // ★ UML tab state — mirrors the BPMN state block above, one-for-one.
+  const UML_REALTIME_CHANNEL = 'uml-diagram-events';
+  const [umlDiagrams, setUmlDiagrams] = useState([]);
+  const [umlHistoryRecord, setUmlHistoryRecord] = useState(null);
+  const [umlEditorOpen, setUmlEditorOpen] = useState(false);
+  const [selectedUmlDiagramId, setSelectedUmlDiagramId] = useState(null);
+  const [selectedUmlDiagramCode, setSelectedUmlDiagramCode] = useState(null);
+  const [umlDirty, setUmlDirty] = useState(false);
+  const [newUmlDiagramName, setNewUmlDiagramName] = useState('');
+  const [newUmlDiagramProjectKey, setNewUmlDiagramProjectKey] = useState('');
+  const [umlDiagramSearch, setUmlDiagramSearch] = useState('');
+  const [umlConflict, setUmlConflict] = useState(null);
+  const umlVersionRef = useRef(null);
+  const [umlVersions, setUmlVersions] = useState([]);
+  const [umlViewingVersion, setUmlViewingVersion] = useState(null);
+  const [umlVersionName, setUmlVersionName] = useState('');
+  const [umlCommitMessage, setUmlCommitMessage] = useState('');
+  const [umlRealtimeEvent, setUmlRealtimeEvent] = useState(null);
+  const umlDirtyRef = useRef(false);
+  useEffect(() => { umlDirtyRef.current = umlDirty; }, [umlDirty]);
+  const umlEditorOpenRef = useRef(false);
+  useEffect(() => { umlEditorOpenRef.current = umlEditorOpen; }, [umlEditorOpen]);
+  const umlViewingVersionRef = useRef(null);
+  useEffect(() => { umlViewingVersionRef.current = umlViewingVersion; }, [umlViewingVersion]);
   // Collaborative editing via polling (Forge has no push channel). We poll the
   // cheap index; on a version change we either auto-reload (no local edits) or
   // raise a conflict banner (local edits present) so work is never lost.
@@ -721,6 +783,22 @@ export default function App() {
     }
   }
 
+  async function loadUmlDiagrams() {
+    setLoading(true);
+    try {
+      const [diagrams, user] = await Promise.all([
+        invokeWithRetry('getUmlDiagrams', {}),
+        currentUserAccountId ? Promise.resolve({ accountId: currentUserAccountId }) : invokeWithRetry('getCurrentUser', {}),
+      ]);
+      setUmlDiagrams(diagrams || []);
+      if (user?.accountId) setCurrentUserAccountId(user.accountId);
+    } catch (e) {
+      setError('UML load error: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const openBpmnDiagram = async (id) => {
     setError(null); // clear any stale banner (e.g. a previous diagram's
     // "deleted by another user" message) — otherwise it stays stuck on
@@ -873,6 +951,131 @@ export default function App() {
     }
   }
 
+  // ── UML equivalents of the open/save/revert/delete flow above ──────
+  const openUmlDiagram = async (id) => {
+    setError(null);
+    try {
+      const rec = await invoke('getUmlDiagram', { diagramId: id });
+      setSelectedUmlDiagramId(id);
+      setSelectedUmlDiagramCode(rec.code);
+      upsertUmlDiagramMeta(rec);
+      setUmlConflict(null);
+      setUmlDirty(false);
+      setUmlViewingVersion(rec.version);
+      setUmlVersionName('');
+      setUmlCommitMessage('');
+      setUmlVersions(normalizeVersions(rec));
+      const authorIds = (rec.versions || []).map((v) => v.savedBy).filter(Boolean);
+      if (rec.lastEditedBy) authorIds.push(rec.lastEditedBy);
+      await resolveDisplayNames(authorIds);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  async function loadUmlVersion(version) {
+    if (!selectedUmlDiagramId) return;
+    try {
+      const v = await invokeWithRetry('getUmlDiagramVersion', { diagramId: selectedUmlDiagramId, version });
+      setSelectedUmlDiagramCode(v.code);
+      setUmlViewingVersion(version);
+      setUmlDirty(false);
+      setUmlConflict(null);
+      setUmlVersionName('');
+      setUmlCommitMessage('');
+      const head = umlVersions.reduce((m, x) => Math.max(m, x.version || 0), umlVersionRef.current || 0);
+      umlVersionRef.current = head || umlVersionRef.current;
+    } catch (e) { setError('Failed to load version: ' + e.message); }
+  }
+
+  function startNewUmlDiagram() {
+    setError(null);
+    setSelectedUmlDiagramId(null); setSelectedUmlDiagramCode(null); setUmlDirty(false);
+    setNewUmlDiagramName(''); setNewUmlDiagramProjectKey(projects[0]?.key || '');
+    setUmlCommitMessage('');
+    umlVersionRef.current = null;
+    setUmlConflict(null);
+  }
+
+  const closeUmlEditor = () => {
+    setUmlEditorOpen(false);
+    if (umlHistoryRecord?.id) openUmlCommitHistory(umlHistoryRecord.id);
+    else if (selectedUmlDiagramId) openUmlCommitHistory(selectedUmlDiagramId);
+  };
+
+  const openUmlVersionInEditor = async (versionNumber) => {
+    const rec = umlHistoryRecord;
+    if (!rec) return;
+    try {
+      const v = await invoke('getUmlDiagramVersion', { diagramId: rec.id, version: versionNumber });
+      setSelectedUmlDiagramId(rec.id);
+      setSelectedUmlDiagramCode(v.code);
+      upsertUmlDiagramMeta(rec);
+      setUmlViewingVersion(versionNumber);
+      setUmlVersions(normalizeVersions(rec));
+      setUmlDirty(false);
+      setUmlConflict(null);
+      setUmlVersionName('');
+      setUmlCommitMessage('');
+      setUmlEditorOpen(true);
+      invoke('touchUmlVersion', { diagramId: rec.id, version: versionNumber }).catch(() => {});
+    } catch (e) {
+      setError('Failed to open version: ' + e.message);
+    }
+  };
+
+  const saveUmlDiagram = async (code) => {
+    try {
+      const payload = {
+        diagramId: selectedUmlDiagramId,
+        name: selectedUmlDiagramId ? (openUmlDiagramMeta?.name || '') : newUmlDiagramName.trim(),
+        projectKey: selectedUmlDiagramId ? openUmlDiagramMeta?.projectKey : newUmlDiagramProjectKey,
+        code,
+        baseVersion: umlViewingVersion ?? openUmlDiagramMeta?.version ?? null,
+        versionName: umlVersionName.trim(),
+        message: umlCommitMessage.trim(),
+      };
+      const rec = await invoke('saveUmlDiagram', payload);
+      setSelectedUmlDiagramId(rec.id);
+      upsertUmlDiagramMeta(rec);
+      setUmlViewingVersion(rec.version);
+      setUmlVersionName('');
+      setUmlCommitMessage('');
+      setUmlVersions(normalizeVersions(rec));
+      setUmlConflict(null);
+      setSrAnnouncement(`Saved ${rec.latestVersionName || `v${rec.version}`}`);
+
+      const diagrams = await invoke('getUmlDiagrams');
+      setUmlDiagrams(diagrams);
+
+      if (rec.lastEditedBy) await resolveDisplayNames([rec.lastEditedBy]);
+    } catch (e) {
+      if (e.message && e.message.startsWith('Conflict:')) {
+        setUmlConflict({
+          lastEditedBy: e.message.match(/saved by (.+?) at/)?.[1] || 'another user',
+          updatedAt: e.message.match(/at (.+?)\./)?.[1] || new Date().toISOString(),
+        });
+      }
+      setError(e.message);
+    }
+  };
+
+  async function deleteUmlDiagram(diagramId) {
+    try {
+      await invokeWithRetry('deleteUmlDiagram', { diagramId });
+      if (selectedUmlDiagramId === diagramId) {
+        setSelectedUmlDiagramId(null);
+        setSelectedUmlDiagramCode(null);
+        setUmlVersions([]);
+        setUmlViewingVersion(null);
+        setUmlHistoryRecord(null);
+      }
+      await loadUmlDiagrams();
+    } catch (e) {
+      setError('Failed to delete diagram: ' + e.message);
+    }
+  }
+
   useEffect(() => {
     setError(null);
     if (activeTab === 'dependencies') {
@@ -883,6 +1086,8 @@ export default function App() {
       loadSummaryData();
     } else if (activeTab === 'bpmn') {
       loadBpmnDiagrams();
+    } else if (activeTab === 'uml') {
+      loadUmlDiagrams();
     }
     setSrAnnouncement(`Switched to ${activeTab} tab`);
   }, [activeTab, selectedProjects]);
@@ -900,6 +1105,7 @@ export default function App() {
     if (activeTab === 'roadmap') loadEpics();
     if (activeTab === 'summary') loadSummaryData();
     if (activeTab === 'bpmn') loadBpmnDiagrams();
+    if (activeTab === 'uml') loadUmlDiagrams();
   }
 
   const handleTabKeyDown = (e, index) => {
@@ -964,12 +1170,12 @@ export default function App() {
       result = result.filter(p => {
         // 1. Look up the specific stats for this project key
         const projectStats = stats[p.key] || { total: 0, done: 0, blocked: 0, inProgress: 0 };
-        
+
         // 2. Evaluate using the projectStats object instead of the base project 'p'
         if (statusFilter === 'blocked') return projectStats.blocked > 0;
         if (statusFilter === 'done') return projectStats.done === projectStats.total && projectStats.total > 0;
-        if (statusFilter === 'inProgress') return projectStats.inProgress > 0 && projectStats.done < projectStats.total; 
-        
+        if (statusFilter === 'inProgress') return projectStats.inProgress > 0 && projectStats.done < projectStats.total;
+
         return true;
       });
     }
@@ -979,8 +1185,8 @@ export default function App() {
       result = result.filter(p => {
         // Projects without dates: include them when filter is active
         // (or change to `return false` if you want to exclude them)
-        if (!p.startDate && !p.dueDate) return true; 
-        
+        if (!p.startDate && !p.dueDate) return true;
+
         // Normalize in case the user (or a date-input quirk) picked an
         // inverted range (end before start) — without this, the two
         // one-sided overlap checks below become strictly weaker than
@@ -991,7 +1197,7 @@ export default function App() {
         const filterEnd = rawStart <= rawEnd ? rawEnd : rawStart;
         const pStart = p.startDate ? new Date(p.startDate) : null;
         const pEnd = p.dueDate ? new Date(p.dueDate) : null;
-        
+
         // Check overlap: project range intersects filter range
         if (pEnd && pEnd < filterStart) return false; // Project ends before filter starts
         if (pStart && pStart > filterEnd) return false; // Project starts after filter ends
@@ -1299,6 +1505,150 @@ export default function App() {
     newDiagramNameTrimmed === '' ||
     bpmnDiagrams.some((d) => (d.name || '').toLowerCase() === newDiagramNameTrimmed.toLowerCase())
   );
+
+  // ── UML permission / meta helpers — mirrors the BPMN block above ────
+  const [canEditUmlDiagram, setCanEditUmlDiagram] = useState(false);
+  const umlProjectKey = selectedUmlDiagramId
+    ? umlDiagrams.find(d => d.id === selectedUmlDiagramId)?.projectKey
+    : newUmlDiagramProjectKey;
+  useEffect(() => {
+    let cancelled = false;
+    if (!umlProjectKey || !currentUserAccountId) { setCanEditUmlDiagram(false); return undefined; }
+    invokeWithRetry('canEditProject', { projectKey: umlProjectKey })
+      .then((res) => { if (!cancelled) setCanEditUmlDiagram(!!res?.canEdit); })
+      .catch(() => { if (!cancelled) setCanEditUmlDiagram(false); });
+    return () => { cancelled = true; };
+  }, [umlProjectKey, currentUserAccountId]);
+
+  const [editableUmlProjectKeys, setEditableUmlProjectKeys] = useState(() => new Set());
+  useEffect(() => {
+    let cancelled = false;
+    const keys = [...new Set(umlDiagrams.map((d) => d.projectKey).filter(Boolean))];
+    if (!currentUserAccountId || keys.length === 0) { setEditableUmlProjectKeys(new Set()); return undefined; }
+    Promise.all(keys.map((key) =>
+      invokeWithRetry('canEditProject', { projectKey: key })
+        .then((res) => [key, !!res?.canEdit])
+        .catch(() => [key, false])
+    )).then((pairs) => {
+      if (cancelled) return;
+      setEditableUmlProjectKeys(new Set(pairs.filter(([, ok]) => ok).map(([key]) => key)));
+    });
+    return () => { cancelled = true; };
+  }, [umlDiagrams, currentUserAccountId]);
+
+  const openUmlDiagramMeta = useMemo(
+    () => (selectedUmlDiagramId ? umlDiagrams.find((d) => d.id === selectedUmlDiagramId) : null),
+    [selectedUmlDiagramId, umlDiagrams]
+  );
+  function upsertUmlDiagramMeta(rec) {
+    setUmlDiagrams((prev) => {
+      const idx = prev.findIndex((d) => d.id === rec.id);
+      if (idx === -1) return [...prev, rec];
+      const next = prev.slice();
+      next[idx] = { ...next[idx], ...rec };
+      return next;
+    });
+  }
+  const newUmlDiagramNameTrimmed = newUmlDiagramName.trim();
+  const newUmlDiagramNameInvalid = selectedUmlDiagramId === null && (
+    newUmlDiagramNameTrimmed === '' ||
+    umlDiagrams.some((d) => (d.name || '').toLowerCase() === newUmlDiagramNameTrimmed.toLowerCase())
+  );
+
+  // Poll for remote changes while a UML diagram is open (Forge has no push
+  // channel besides the realtime events below, which can be missed if the
+  // tab wasn't mounted at publish time).
+  useEffect(() => {
+    if (activeTab !== 'uml' || !selectedUmlDiagramId) return undefined;
+    const id = selectedUmlDiagramId;
+
+    const applyRemote = async () => {
+      try {
+        const full = await invokeWithRetry('getUmlDiagram', { diagramId: id });
+        setSelectedUmlDiagramCode(full.code);
+        umlVersionRef.current = full.version ?? null;
+        setUmlDirty(false);
+        setUmlVersions(normalizeVersions(full));
+        setUmlViewingVersion(full.version ?? null);
+        setUmlConflict(null);
+      } catch (e) { /* ignore transient poll errors */ }
+    };
+
+    const tick = async () => {
+      try {
+        const index = await invokeWithRetry('getUmlDiagrams', {});
+        const meta = (index || []).find((d) => d.id === id);
+        if (!meta || meta.version == null) return;
+        if (meta.version === umlVersionRef.current) return;
+        if (umlEditorOpenRef.current && umlViewingVersionRef.current != null &&
+            umlViewingVersionRef.current !== meta.version) return;
+        if (!canEditUmlDiagram || !umlDirtyRef.current) await applyRemote();
+        else setUmlConflict(meta);
+      } catch (e) { /* ignore */ }
+    };
+
+    const interval = setInterval(tick, 4000);
+    return () => clearInterval(interval);
+  }, [activeTab, selectedUmlDiagramId, canEditUmlDiagram]);
+
+  // ★ Subscribe to Forge Realtime for UML diagram save/delete events
+  useEffect(() => {
+    let subscription = null;
+    let mounted = true;
+
+    const setupRealtime = async () => {
+      try {
+        subscription = await realtime.subscribe(UML_REALTIME_CHANNEL, (event) => {
+          if (!mounted) return;
+          const data = typeof event === 'string' ? JSON.parse(event) : event;
+
+          if (data.type === 'diagram:saved') {
+            if (data.savedBy === currentUserAccountId) return;
+            setUmlRealtimeEvent(data);
+            if (data.diagramId === selectedUmlDiagramId && !umlDirty) {
+              openUmlDiagram(data.diagramId);
+            }
+            if (data.diagramId === selectedUmlDiagramId && umlDirty) {
+              setUmlConflict({
+                lastEditedBy: data.savedByDisplay || data.savedBy,
+                updatedAt: data.savedAt,
+                version: data.version,
+              });
+            }
+            invoke('getUmlDiagrams').then(setUmlDiagrams).catch(() => {});
+            setTimeout(() => setUmlRealtimeEvent(null), 8000);
+          }
+
+          if (data.type === 'diagram:deleted') {
+            if (data.diagramId === selectedUmlDiagramId) {
+              setSelectedUmlDiagramId(null);
+              setSelectedUmlDiagramCode(null);
+              setError('This UML diagram was deleted by another user.');
+            }
+            invoke('getUmlDiagrams').then(setUmlDiagrams).catch(() => {});
+          }
+        });
+      } catch (e) {
+        console.error('UML realtime subscription failed:', e);
+      }
+    };
+
+    setupRealtime();
+
+    return () => {
+      mounted = false;
+      if (subscription && typeof subscription.unsubscribe === 'function') {
+        subscription.unsubscribe();
+      }
+    };
+  }, [currentUserAccountId, selectedUmlDiagramId, umlDirty]);
+
+  const filteredUmlDiagrams = useMemo(() => {
+    const q = umlDiagramSearch.trim().toLowerCase();
+    if (!q) return umlDiagrams;
+    return umlDiagrams.filter((d) => (d.name || '').toLowerCase().includes(q));
+  }, [umlDiagrams, umlDiagramSearch]);
+
   useEffect(() => {
     // Runs for EVERYONE viewing an open diagram, not just editors — this is
     // the actual fix for "editor sees v2, viewer is frozen on view-only".
@@ -1859,9 +2209,9 @@ export default function App() {
 
             <div className="pagination" style={{ marginTop: '10px', display: 'flex', gap: '5px' }}>
               <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)}>Prev</button>
-              <button 
-                data-testid="pagination-next" 
-                disabled={filteredAndSortedProjects.length <= currentPage * 10} 
+              <button
+                data-testid="pagination-next"
+                disabled={filteredAndSortedProjects.length <= currentPage * 10}
                 onClick={() => setCurrentPage(p => p + 1)}
               >
               Next
@@ -1873,7 +2223,7 @@ export default function App() {
         {activeTab === 'dependencies' && (
           <section className="dependencies-section" id="panel-dependencies" role="tabpanel">
             <h2>Dependencies</h2>
-            
+
             {/* Filter Bar */}
             <div className="filter-bar" style={{ display: 'flex', gap: '15px', alignItems: 'center', padding: '0 20px 10px', flexWrap: 'wrap' }}>
               <div>
@@ -1950,9 +2300,9 @@ export default function App() {
                   <p>No issues found.</p>
                 ) : (
                   paginatedDependencies.map(issue => (
-                    <div key={issue.id} className="dependency-node" style={{ 
-                      border: '1px solid #ddd', 
-                      padding: '10px', 
+                    <div key={issue.id} className="dependency-node" style={{
+                      border: '1px solid #ddd',
+                      padding: '10px',
                       marginBottom: '10px',
                       borderRadius: '4px'
                     }}>
@@ -2039,7 +2389,7 @@ export default function App() {
         {activeTab === 'roadmap' && (
           <section className="roadmap-section" id="panel-roadmap" role="tabpanel">
             <h2>Roadmap</h2>
-            
+
             {/* Project Filter */}
             <div className="filter-bar" style={{ padding: '0 20px 10px', display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
               <div>
@@ -2095,7 +2445,7 @@ export default function App() {
                 </button>
               )}
             </div>
-            
+
             {/* Loading / Empty / Content States */}
             {loading ? (
               <p style={{ padding: '0 20px' }}>Loading roadmap…</p>
@@ -2106,11 +2456,11 @@ export default function App() {
                     <p>No epics with dates found.</p>
                   ) : (
                     paginatedRoadmapEpics.map(epic => (
-                      <div 
-                        key={epic.id} 
-                        className={`timeline-item epic-bar ${epic.isOverlapping ? 'overlapping' : ''}`} 
-                        style={{ 
-                          position: 'relative', 
+                      <div
+                        key={epic.id}
+                        className={`timeline-item epic-bar ${epic.isOverlapping ? 'overlapping' : ''}`}
+                        style={{
+                          position: 'relative',
                           margin: '10px 0',
                           padding: '10px',
                           borderLeft: epic.isOverlapping ? '4px solid #ff9900' : '4px solid #0052cc',
@@ -2140,13 +2490,13 @@ export default function App() {
                             {epic.dueDate && <span style={{ marginLeft: '15px' }}>Due: {formatDate(epic.dueDate)}</span>}
                           </div>
                           <div className="meta" style={{ marginTop: '5px', fontSize: '12px' }}>
-                            <span className="project-badge" style={{ 
-                              background: '#deebff', color: '#0052cc', 
+                            <span className="project-badge" style={{
+                              background: '#deebff', color: '#0052cc',
                               padding: '2px 6px', borderRadius: '3px', marginRight: '8px'
                             }}>
                               {epic.project}
                             </span>
-                            <span className={`status-badge ${epic.statusCategory}`} style={{ 
+                            <span className={`status-badge ${epic.statusCategory}`} style={{
                               background: epic.statusCategory === 'done' ? '#e3fcef' : '#ffe380',
                               color: epic.statusCategory === 'done' ? '#006644' : '#172b4d',
                               padding: '2px 6px', borderRadius: '3px', marginRight: '8px'
@@ -2353,6 +2703,102 @@ export default function App() {
             )}
           </section>
         )}
+
+        {activeTab === 'uml' && (
+          <section className="uml-section" id="panel-uml" role="tabpanel">
+            <h2>UML Diagrams</h2>
+
+            {loading && !selectedUmlDiagramCode && selectedUmlDiagramId === null && umlDiagrams.length === 0 ? (
+              <p style={{ padding: '0 20px' }}>Loading diagrams…</p>
+            ) : (
+              <div style={{ padding: '0 20px', display: 'flex', gap: '20px' }}>
+                <div id="uml-library-col" className="uml-diagram-library-col">
+                  <div className="uml-diagram-library">
+                    <input
+                      type="text"
+                      placeholder="Search diagrams..."
+                      value={umlDiagramSearch}
+                      onChange={(e) => setUmlDiagramSearch(e.target.value)}
+                      data-testid="uml-diagram-search"
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '6px 8px', marginBottom: '8px' }}
+                    />
+                    <button
+                      onClick={() => {
+                        startNewUmlDiagram();
+                        setUmlEditorOpen(true);
+                      }}
+                      data-testid="new-uml-diagram"
+                      style={{ marginBottom: '10px', width: '100%' }}
+                    >
+                      + New Diagram
+                    </button>
+                    <ul style={{ listStyle: 'none', padding: 0, margin: 0 }} data-testid="uml-diagram-list">
+                      {umlDiagrams.length === 0 && (
+                        <li style={{ color: '#666', fontSize: '13px' }}>No diagrams yet.</li>
+                      )}
+                      {umlDiagrams.length > 0 && filteredUmlDiagrams.length === 0 && (
+                        <li style={{ color: '#666', fontSize: '13px' }}>No diagrams match your search.</li>
+                      )}
+                      {filteredUmlDiagrams.map(d => {
+                        const isOwner = editableUmlProjectKeys.has(d.projectKey);
+                        const isOrphaned = d.projectExists === false;
+                        return (
+                          <li key={d.id} style={{ marginBottom: '6px' }}>
+                            <button
+                              onClick={() => openUmlCommitHistory(d.id)}
+                              style={{
+                                display: 'block', width: '100%', textAlign: 'left',
+                                background: selectedUmlDiagramId === d.id ? '#e6effc' : 'none',
+                                border: isOrphaned ? '1px solid #ffab00' : '1px solid #ddd', borderRadius: '4px',
+                                padding: '6px 8px', cursor: 'pointer',
+                              }}
+                            >
+                              <div style={{ fontWeight: 'bold', fontSize: '13px' }}>{d.name}</div>
+                              <div style={{ fontSize: '11px', color: '#666' }}>
+                                {d.projectKey} {isOwner ? '· you can edit' : '· view only'}
+                              </div>
+                              {isOrphaned && (
+                                <div data-testid={`orphaned-uml-badge-${d.id}`}
+                                  style={{ fontSize: '11px', color: '#974f0c', marginTop: '2px' }}>
+                                  ⚠ Project deleted — read-only, no one can edit this anymore
+                                </div>
+                              )}
+                            </button>
+                            {(isOwner || isOrphaned) && (
+                              <button
+                                onClick={() => deleteUmlDiagram(d.id)}
+                                data-testid={`delete-uml-${d.id}`}
+                                style={{ fontSize: '11px', color: '#bf2600', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0' }}
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                </div>
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {umlHistoryRecord ? (
+                    <BpmnCommitHistory
+                      record={umlHistoryRecord}
+                      canEdit={canEditUmlDiagram}
+                      onPickVersion={openUmlVersionInEditor}
+                      onRevert={handleUmlRevert}
+                      onBack={() => { setUmlHistoryRecord(null); setSelectedUmlDiagramId(null); }}
+                    />
+                  ) : (
+                    <p style={{ color: '#666' }}>
+                      Select a diagram from the library, or create a new one.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
       </main>
       <BpmnEditorModal
         open={editorOpen}
@@ -2458,6 +2904,90 @@ export default function App() {
           />
         </ErrorBoundary>
       </BpmnEditorModal>
+      <UmlEditorModal
+        open={umlEditorOpen}
+        onClose={closeUmlEditor}
+        dirty={umlDirty}
+        canEdit={canEditUmlDiagram}
+        headerTitle={selectedUmlDiagramId ? (openUmlDiagramMeta?.name || 'Diagram') : 'New diagram'}
+        headerVersion={
+          selectedUmlDiagramId
+            ? (umlVersions.find((v) => v.version === umlViewingVersion)?.name ||
+               (umlViewingVersion != null ? `v${umlViewingVersion}` : ''))
+            : ''
+        }
+      >
+        {selectedUmlDiagramId === null && (
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
+            <input
+              type="text"
+              placeholder="Diagram name"
+              value={newUmlDiagramName}
+              onChange={(e) => setNewUmlDiagramName(e.target.value)}
+              data-testid="new-uml-diagram-name"
+            />
+            <select
+              value={newUmlDiagramProjectKey}
+              onChange={(e) => setNewUmlDiagramProjectKey(e.target.value)}
+              data-testid="new-uml-diagram-project"
+            >
+              {projects.map(p => (
+                <option key={p.key} value={p.key}>{p.name} ({p.key})</option>
+              ))}
+            </select>
+          </div>
+        )}
+        {selectedUmlDiagramId === null && newUmlDiagramNameInvalid && (
+          <p style={{ color: '#bf2600', fontSize: '12px', margin: '-4px 0 10px' }}>
+            {newUmlDiagramNameTrimmed === ''
+              ? 'Enter a name to enable saving.'
+              : 'A diagram with this name already exists.'}
+          </p>
+        )}
+        {umlConflict && (
+          <div role="alert" style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+            background: '#fff3cd', border: '1px solid #ffc107', borderRadius: 4,
+            padding: '8px 12px', marginBottom: 8, fontSize: 12,
+          }}>
+            <span>
+              This diagram was updated by {umlConflict.lastEditedBy || 'another user'}
+              {' '}at {new Date(umlConflict.updatedAt).toLocaleTimeString()}.
+              Your unsaved changes would be overwritten by a reload.
+            </span>
+            <span style={{ display: 'flex', gap: 6 }}>
+              <button onClick={() => openUmlDiagram(selectedUmlDiagramId)} style={{ fontSize: 11 }}>Reload remote</button>
+              <button onClick={() => setUmlConflict(null)} style={{ fontSize: 11, background: 'none', border: 'none', cursor: 'pointer' }}>Keep mine</button>
+            </span>
+          </div>
+        )}
+        <ErrorBoundary key={selectedUmlDiagramId || 'new'}>
+          <UmlDiagramView
+            key={selectedUmlDiagramId || 'new'}
+            code={selectedUmlDiagramCode || EMPTY_UML_CODE}
+            canEdit={canEditUmlDiagram}
+            onSave={saveUmlDiagram}
+            onDirtyChange={setUmlDirty}
+            saveDisabled={newUmlDiagramNameInvalid || !umlVersionName.trim()}
+            modelName={selectedUmlDiagramId ? (openUmlDiagramMeta?.name || '') : (newUmlDiagramName.trim() || 'New diagram')}
+            modelVersion={umlViewingVersion ?? openUmlDiagramMeta?.version}
+            modelVersionName={umlVersions.find((v) => v.version === umlViewingVersion)?.name}
+            modelLastEditedByDisplay={
+              displayNameCache[openUmlDiagramMeta?.lastEditedBy] ||
+              openUmlDiagramMeta?.lastEditedByDisplay ||
+              openUmlDiagramMeta?.lastEditedBy
+            }
+            modelLastEditedAt={openUmlDiagramMeta?.updatedAt}
+            versionName={umlVersionName}
+            onVersionNameChange={setUmlVersionName}
+            commitMessage={umlCommitMessage}
+            onCommitMessageChange={setUmlCommitMessage}
+            realtimeEvent={umlRealtimeEvent}
+            onOpenVersionList={closeUmlEditor}
+            viewingVersion={umlViewingVersion}
+          />
+        </ErrorBoundary>
+      </UmlEditorModal>
     </div>
   );
 }

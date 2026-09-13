@@ -727,3 +727,275 @@ describe('BPMN diagrams (getCurrentUser, getBpmnDiagrams, getBpmnDiagram, saveBp
     ).rejects.toThrow('already the latest');
   });
 });
+
+// ─── UML diagrams (Mermaid) — mirrors the BPMN suite above one-for-one, ───
+// ─── swapping `xml` for `code` since there's no bpmn-js canvas involved ───
+describe('UML diagrams (getUmlDiagrams, getUmlDiagram, saveUmlDiagram, deleteUmlDiagram, revertUmlDiagram)', () => {
+  const LEAD_ACCOUNT_ID = 'lead-acc-1';
+  const OTHER_ACCOUNT_ID = 'other-acc-2';
+
+  function mockCanEdit(canEdit) {
+    mockJiraResponse({ permissions: { EDIT_ISSUES: { havePermission: canEdit } } });
+  }
+
+  function mockProjectExists(exists) {
+    if (exists) mockJiraResponse({});
+    else mockJiraError(404, 'Not Found');
+  }
+
+  it('returns an empty list when no diagrams have been created', async () => {
+    const result = await getResolver('getUmlDiagrams')({});
+    expect(result).toEqual([]);
+  });
+
+  it('lets a user with edit permission create a new diagram', async () => {
+    mockCanEdit(true);
+
+    const result = await getResolver('saveUmlDiagram')({
+      payload: { diagramId: null, name: 'Domain Model', projectKey: 'TEST', code: 'classDiagram\n  class Order' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+
+    expect(result).toMatchObject({ name: 'Domain Model', projectKey: 'TEST', code: 'classDiagram\n  class Order' });
+    expect(result.id).toBeTruthy();
+    expect(result.createdAt).toBe(result.updatedAt);
+
+    mockProjectExists(true);
+    const index = await getResolver('getUmlDiagrams')({});
+    expect(index).toEqual([{
+      id: result.id,
+      name: 'Domain Model',
+      projectKey: 'TEST',
+      updatedAt: result.updatedAt,
+      lastEditedBy: 'lead-acc-1',
+      lastEditedByDisplay: 'lead-acc-1',
+      version: 1,
+      latestVersionName: 'v1',
+      projectExists: true,
+    }]);
+  });
+
+  it('rejects a save from anyone without edit permission', async () => {
+    mockCanEdit(false);
+    await expect(
+      getResolver('saveUmlDiagram')({
+        payload: { diagramId: null, name: 'Domain Model', projectKey: 'TEST', code: 'classDiagram' },
+        context: { accountId: OTHER_ACCOUNT_ID },
+      })
+    ).rejects.toThrow('You need edit permission on this project to save this diagram.');
+    const index = await getResolver('getUmlDiagrams')({});
+    expect(index).toEqual([]);
+  });
+
+  it('rejects a save with no authenticated user at all', async () => {
+    await expect(
+      getResolver('saveUmlDiagram')({
+        payload: { diagramId: null, name: 'Domain Model', projectKey: 'TEST', code: 'classDiagram' },
+        context: {},
+      })
+    ).rejects.toThrow('You need edit permission on this project to save this diagram.');
+  });
+
+  it('updates an existing diagram in place, preserving createdAt', async () => {
+    mockCanEdit(true);
+    const created = await getResolver('saveUmlDiagram')({
+      payload: { diagramId: null, name: 'v1', projectKey: 'TEST', code: 'classDiagram\n  class A' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+
+    mockCanEdit(true);
+    const updated = await getResolver('saveUmlDiagram')({
+      payload: { diagramId: created.id, name: 'v2', projectKey: 'TEST', code: 'classDiagram\n  class B' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+
+    expect(updated.id).toBe(created.id);
+    expect(updated.name).toBe('v2');
+    expect(updated.createdAt).toBe(created.createdAt);
+
+    mockProjectExists(true);
+    const index = await getResolver('getUmlDiagrams')({});
+    expect(index).toHaveLength(1);
+    expect(index[0].name).toBe('v2');
+  });
+
+  it('fetches a single diagram by id, and throws for an unknown id', async () => {
+    mockCanEdit(true);
+    const created = await getResolver('saveUmlDiagram')({
+      payload: { diagramId: null, name: 'Domain Model', projectKey: 'TEST', code: 'classDiagram' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+
+    mockProjectExists(true);
+    const fetched = await getResolver('getUmlDiagram')({ payload: { diagramId: created.id } });
+    expect(fetched).toEqual({ ...created, projectExists: true });
+
+    await expect(
+      getResolver('getUmlDiagram')({ payload: { diagramId: 'does-not-exist' } })
+    ).rejects.toThrow('Diagram does-not-exist not found');
+  });
+
+  it('getUmlDiagramVersion returns a past version\'s code', async () => {
+    mockCanEdit(true);
+    const v1 = await getResolver('saveUmlDiagram')({
+      payload: { diagramId: null, name: 'd', projectKey: 'TEST', code: 'classDiagram\n  class A', versionName: 'one' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+    mockCanEdit(true);
+    await getResolver('saveUmlDiagram')({
+      payload: { diagramId: v1.id, name: 'd', projectKey: 'TEST', code: 'classDiagram\n  class B', versionName: 'two', baseVersion: 1 },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+
+    const fetchedV1 = await getResolver('getUmlDiagramVersion')({ payload: { diagramId: v1.id, version: 1 } });
+    expect(fetchedV1.code).toBe('classDiagram\n  class A');
+
+    await expect(
+      getResolver('getUmlDiagramVersion')({ payload: { diagramId: v1.id, version: 99 } })
+    ).rejects.toThrow('Version 99 not found');
+  });
+
+  it('lets a user with edit permission delete a diagram', async () => {
+    mockCanEdit(true);
+    const created = await getResolver('saveUmlDiagram')({
+      payload: { diagramId: null, name: 'Domain Model', projectKey: 'TEST', code: 'classDiagram' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+
+    mockProjectExists(true);
+    mockCanEdit(true);
+    const result = await getResolver('deleteUmlDiagram')({
+      payload: { diagramId: created.id },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+
+    expect(result).toEqual({ deleted: true });
+    expect(await getResolver('getUmlDiagrams')({})).toEqual([]);
+    await expect(
+      getResolver('getUmlDiagram')({ payload: { diagramId: created.id } })
+    ).rejects.toThrow();
+  });
+
+  it('rejects a delete from anyone without edit permission', async () => {
+    mockCanEdit(true);
+    const created = await getResolver('saveUmlDiagram')({
+      payload: { diagramId: null, name: 'Domain Model', projectKey: 'TEST', code: 'classDiagram' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+
+    mockProjectExists(true);
+    mockCanEdit(false);
+    await expect(
+      getResolver('deleteUmlDiagram')({
+        payload: { diagramId: created.id },
+        context: { accountId: OTHER_ACCOUNT_ID },
+      })
+    ).rejects.toThrow('You need edit permission on this project to delete this diagram.');
+    mockProjectExists(true);
+    expect(await getResolver('getUmlDiagrams')({})).toHaveLength(1);
+  });
+
+  it('deleting a diagram that does not exist is a no-op, not an error', async () => {
+    const result = await getResolver('deleteUmlDiagram')({
+      payload: { diagramId: 'never-existed' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+    expect(result).toEqual({ deleted: false });
+  });
+
+  it('allows any authenticated user to delete a diagram whose project no longer exists', async () => {
+    mockCanEdit(true);
+    const created = await getResolver('saveUmlDiagram')({
+      payload: { diagramId: null, name: 'Orphaned', projectKey: 'GONE', code: 'classDiagram' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+
+    mockProjectExists(false);
+    const result = await getResolver('deleteUmlDiagram')({
+      payload: { diagramId: created.id },
+      context: { accountId: 'random-unrelated-account' },
+    });
+
+    expect(result).toEqual({ deleted: true });
+  });
+
+  it('still requires a signed-in user to delete an orphaned diagram', async () => {
+    mockCanEdit(true);
+    const created = await getResolver('saveUmlDiagram')({
+      payload: { diagramId: null, name: 'Orphaned', projectKey: 'GONE', code: 'classDiagram' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+
+    mockProjectExists(false);
+    await expect(
+      getResolver('deleteUmlDiagram')({
+        payload: { diagramId: created.id },
+        context: {},
+      })
+    ).rejects.toThrow('You must be signed in to delete this diagram.');
+  });
+
+  it('revertUmlDiagram appends a new "revert" commit copying the target code, keeping history intact', async () => {
+    mockCanEdit(true);
+    const v1 = await getResolver('saveUmlDiagram')({
+      payload: { diagramId: null, name: 'd', projectKey: 'TEST', code: 'classDiagram\n  class A', versionName: 'one' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+    mockCanEdit(true);
+    const v2 = await getResolver('saveUmlDiagram')({
+      payload: { diagramId: v1.id, name: 'd', projectKey: 'TEST', code: 'classDiagram\n  class B', versionName: 'two', baseVersion: 1 },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+    expect(v2.version).toBe(2);
+
+    mockCanEdit(true);
+    const reverted = await getResolver('revertUmlDiagram')({
+      payload: { diagramId: v1.id, toVersion: 1, baseVersion: 2 },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+
+    expect(reverted.version).toBe(3);
+    expect(reverted.code).toBe('classDiagram\n  class A');
+    expect(reverted.versions).toHaveLength(3);
+    const head = reverted.versions[reverted.versions.length - 1];
+    expect(head.kind).toBe('revert');
+    expect(head.revertedFromVersion).toBe(1);
+    expect(head.parentVersion).toBe(2);
+    expect(head.savedBy).toBe(LEAD_ACCOUNT_ID);
+  });
+
+  it('revertUmlDiagram rejects a user without edit permission', async () => {
+    mockCanEdit(true);
+    const v1 = await getResolver('saveUmlDiagram')({
+      payload: { diagramId: null, name: 'd', projectKey: 'TEST', code: 'classDiagram' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+    mockCanEdit(true);
+    await getResolver('saveUmlDiagram')({
+      payload: { diagramId: v1.id, name: 'd', projectKey: 'TEST', code: 'classDiagram\n  class B', baseVersion: 1 },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+    mockCanEdit(false);
+    await expect(
+      getResolver('revertUmlDiagram')({
+        payload: { diagramId: v1.id, toVersion: 1, baseVersion: 2 },
+        context: { accountId: OTHER_ACCOUNT_ID },
+      })
+    ).rejects.toThrow('You need edit permission on this project to revert this diagram.');
+  });
+
+  it('revertUmlDiagram refuses to revert to the current HEAD', async () => {
+    mockCanEdit(true);
+    const v1 = await getResolver('saveUmlDiagram')({
+      payload: { diagramId: null, name: 'd', projectKey: 'TEST', code: 'classDiagram' },
+      context: { accountId: LEAD_ACCOUNT_ID },
+    });
+    mockCanEdit(true);
+    await expect(
+      getResolver('revertUmlDiagram')({
+        payload: { diagramId: v1.id, toVersion: 1, baseVersion: 1 },
+        context: { accountId: LEAD_ACCOUNT_ID },
+      })
+    ).rejects.toThrow('already the latest');
+  });
+});
