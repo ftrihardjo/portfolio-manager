@@ -35,6 +35,7 @@
     "build:ui": "npm --prefix static/portfolio-ui run build",
     "deploy": "npm run build:ui && forge deploy",
     "deploy:upgrade": "npm run build:ui && forge deploy && forge install --upgrade",
+    "deploy:prod": "npm run build:ui && forge deploy -e production && forge install --upgrade -e production -s felixtrihardjo.atlassian.net -p jira",
     "stage:upgrade": "npm run build:ui && forge install --upgrade -e staging -s felixtrihardjo.atlassian.net -p jira"
   },
   "jest": {
