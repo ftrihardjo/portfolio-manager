@@ -86,7 +86,7 @@ export default function UmlDiagramView({
         {canEdit && (
           <div className="uml-tb-group">
             <button className="uml-tb-btn primary" onClick={handleSave}
-              disabled={saveDisabled || !dirty} data-testid="save-uml" title="Save diagram">
+              disabled={saveDisabled} data-testid="save-uml" title="Save diagram">
               💾 Save
             </button>
             <label className="uml-tb-label" htmlFor="uml-version-name" title="Name the version you are about to save">

@@ -147,7 +147,7 @@ describe('App', () => {
   // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   it('renders header and three tabs', () => {
     render(<App />);
-    expect(screen.getByText('BPMN, Workflow Automation & Portfolio Manager')).toBeInTheDocument();
+    expect(screen.getByText('BPMN, UML, Workflow Automation & Portfolio Manager')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /Projects/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /Dependencies/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /Roadmap/i })).toBeInTheDocument();

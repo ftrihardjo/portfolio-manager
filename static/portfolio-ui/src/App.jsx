@@ -1906,7 +1906,7 @@ export default function App() {
       </div>
 
       <header className="app-header">
-        <h1>BPMN, Workflow Automation & Portfolio Manager</h1>
+        <h1>BPMN, UML, Workflow Automation & Portfolio Manager</h1>
         <nav className="tabs" role="tablist" aria-label="Portfolio Views">
           {TABS.map((tab, idx) => (
             <button
