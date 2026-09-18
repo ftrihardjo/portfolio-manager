@@ -14,7 +14,7 @@
     "dmn-js": "^17.2.0",
     "dmn-js-properties-panel": "^3.5.0",
     "jspdf": "^4.2.1",
-    "mermaid": "^11.17.2",
+    "mermaid": "^12.0.0",
     "preact": "^10.22.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
@@ -30,7 +30,7 @@
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@vitejs/plugin-react": "^6.0.5",
-    "@vitest/ui": "^4.1.10",
+    "@vitest/ui": "^4.1.11",
     "axe-core": "^4.11.4",
     "cypress": "^15.15.0",
     "cypress-axe": "^1.7.0",
@@ -38,7 +38,7 @@
     "identity-obj-proxy": "^3.0.0",
     "jsdom": "^29.1.1",
     "vite": "^8.2.0",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   },
   "overrides": {
     "tmp": "^0.2.6",
@@ -51,7 +51,7 @@
     "qs": "^6.15.2",
     "linkify-it": "^5.0.2",
     "svgo": "^3.3.2",
-    "react-router": "8.3.0"
+    "chevrotain": "^12.0.0"
   },
   "scripts": {
     "start": "vite",

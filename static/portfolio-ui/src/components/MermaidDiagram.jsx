@@ -1,12 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 
-// Initialize configuration once on load
+// Initialize configuration once on load.
+// Note: we deliberately do NOT pin `theme` or `look` here. Mermaid 12 gives
+// class/sequence/state/ER (and others) their own default theme — redux-color
+// with the neo look — and hard-coding `theme: 'default'` opts every diagram
+// back out of that, which is why diagrams previously rendered flat and
+// uncoloured compared to the Mermaid docs.
 mermaid.initialize({
   startOnLoad: false,
-  theme: 'default',
   securityLevel: 'loose', // Allows click events and interactions
-  fontFamily: 'sans-serif',
 });
 
 let renderSeq = 0;
